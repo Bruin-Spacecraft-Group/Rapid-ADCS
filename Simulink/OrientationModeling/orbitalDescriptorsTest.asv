@@ -1,0 +1,21 @@
+a = pi / 4;
+B = pi / 4;
+Y = 0;
+% a = alpha, B = beta, Y = gamma
+% a = yaw, B = pitch, Y = roll
+
+arr_A = [cos(a), -sin(a), 0; sin(a), cos(a), 0; 0, 0, 1];
+arr_B = [cos(B), 0, sin(B); 0, 1, 0; -sin(B), 0, cos(B)];
+arr_Y = [1, 0, 0; 0, cos(Y), -sin(Y); 0, sin(Y), cos(Y)];
+
+X1 = [1;0;0];
+Y1 = [0;1;0];
+Z1 = [0;0;1];
+
+X2 = arr_Y * (arr_B * (arr_A * X1));
+Y2 = arr_Y * (arr_B * (arr_A * Y1));
+Z2 = arr_Y * (arr_B * (arr_A * Z1));
+
+disp("(" + X2(1) + "," + X2(2) + "," + X2(3) + ")");
+disp("(" + Y2(1) + "," + Y2(2) + "," + Y2(3) + ")");
+disp("(" + Z2(1) + "," + Z2(2) + "," + Z2(3) + ")");

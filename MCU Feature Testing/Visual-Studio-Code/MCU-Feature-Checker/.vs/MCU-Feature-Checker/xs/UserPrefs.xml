@@ -1,0 +1,23 @@
+﻿<Properties>
+  <MonoDevelop.Ide.ItemProperties.MCU-Feature-Checker FirstBuild="True" />
+  <MonoDevelop.Ide.Workbench ActiveDocument="MCU-Feature-Checker/MyClass.cs">
+    <Files>
+      <File FileName="MCU-Feature-Checker/MyClass.cs" Line="11" Column="1" />
+    </Files>
+    <Pads>
+      <Pad Id="ProjectPad">
+        <State name="__root__">
+          <Node name="MCU-Feature-Checker" expanded="True">
+            <Node name="MCU-Feature-Checker" expanded="True" selected="True" />
+          </Node>
+        </State>
+      </Pad>
+    </Pads>
+  </MonoDevelop.Ide.Workbench>
+  <MonoDevelop.Ide.DebuggingService.PinnedWatches />
+  <MonoDevelop.Ide.Workspace />
+  <MonoDevelop.Ide.DebuggingService.Breakpoints>
+    <BreakpointStore />
+  </MonoDevelop.Ide.DebuggingService.Breakpoints>
+  <MultiItemStartupConfigurations />
+</Properties>

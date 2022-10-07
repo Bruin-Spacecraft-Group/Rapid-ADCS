@@ -1,0 +1,14 @@
+The following features should be shown to be functional with documentation on the necessary code:
+
+- GPIO pin set output
+- GPIO pin read input
+- PWM output:
+	- Multi-pin, multi-channel capable
+	- Acceptable resolution for motor control
+- ADC input
+- DAC output
+- Communication protocols (master / slave):
+	- I2C
+	- USART
+	- SPI
+
