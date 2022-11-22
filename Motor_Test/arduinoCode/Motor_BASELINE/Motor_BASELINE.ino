@@ -65,7 +65,6 @@ void setMotorSpeed(double rpm, boolean forward){
 void rising() {
   attachInterrupt(1, falling, FALLING);
 }
- 
 void falling() {
   attachInterrupt(1, rising, RISING);
   pwm_value = micros()-prev_time;
@@ -86,7 +85,12 @@ void falling() {
   prev_time = micros();
 }
 
+double index = 0;
 void loop() {
-  delay(3000);
-  setMotorSpeed(3000.0, 1);
+  delay(10);
+  index += 5;
+  if(index > 12000){
+    index = 2000;
+  }
+  setMotorSpeed(index, 0);
 }
