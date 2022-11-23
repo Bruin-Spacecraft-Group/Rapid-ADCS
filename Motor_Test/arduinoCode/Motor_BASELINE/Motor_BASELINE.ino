@@ -19,9 +19,9 @@ int maxCount = 10;
 volatile double timeSec = 0;
 volatile double prevTime = 0;
 bool highSpeed = 0;
-long acc_t1 = 0;
+volatile long acc_t1 = 0;
 volatile double accel = 0;
-double cur_time = 0;
+volatile double cur_time = 0;
 double tmp = 0;
 
 void setup() {
@@ -80,6 +80,8 @@ void falling() {
   rpm = ((1.0 / (((double) pwm_value) / 1000000.0)) / 6.0) * 60.0;
   totalRPM += rpm;
   timeSec += (((double) pwm_value) / 1000000.0);
+//  Serial.print("timeSec: ");
+//  Serial.println(timeSec);
   count++;
   if(count >= maxCount){
     rpm = totalRPM / (double) maxCount;
@@ -96,18 +98,18 @@ void falling() {
 
 double index = 0;
 void loop() {
-  delay(10);
-  index += 5;
+  delay(50);
+  index += 25;
   if(index > 15000){
     index = 0;
   }
-  Serial.print(timeSec);
-  Serial.print(", ");
-  Serial.print(index);
-  Serial.print(", ");
-  Serial.print(rpm);
-  Serial.print(", ");
-  Serial.print(accel);
-  Serial.println();
+   Serial.print(timeSec*1000);
+   Serial.print(", ");
+   Serial.print(index);
+   Serial.print(", ");
+   Serial.print(rpm);
+   Serial.print(", ");
+   Serial.print(accel);
+   Serial.println();
   setMotorSpeed(index, 0);
 }
