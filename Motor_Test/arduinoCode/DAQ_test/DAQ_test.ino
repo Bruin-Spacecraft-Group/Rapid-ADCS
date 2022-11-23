@@ -1,3 +1,9 @@
+/*
+ * README
+ * For option 4 to work, make sure you set your serial monitor to "no line ending."
+ */
+
+
 #include <Wire.h>
 
 // DAC COMMANDS
@@ -19,9 +25,9 @@ int maxCount = 10;
 volatile double timeSec = 0;
 volatile double prevTime = 0;
 bool highSpeed = 0;
-long acc_t1 = 0;
+volatile long acc_t1 = 0;
 volatile double accel = 0;
-double cur_time = 0;
+volatile double cur_time = 0;
 double tmp = 0;
 
 int test_config = 0;
@@ -36,6 +42,8 @@ void setup() {
   pinMode(DIR, OUTPUT);
   attachInterrupt(1, rising, RISING);
 
+  setMotorSpeed(0, 0);
+
   Serial.println("Please configure DAQ test.");
   Serial.println("  1. Speed vs torque");
   Serial.println("  2. Speed control precision");
@@ -44,6 +52,7 @@ void setup() {
 
   while (test_config < 1 || test_config > 4) {
     Serial.println("Please input a number between 1 and 4.");
+    while (Serial.available() == 0) {}
     test_config = Serial.parseInt();
   }
 
@@ -101,21 +110,27 @@ void falling() {
     accel = (rpm - prev_rpm) / ((cur_time - acc_t1) / 1000000.0);
     acc_t1 = cur_time;
     prev_rpm = rpm;
+//    Serial.print("rpm = ");
+//    Serial.println(rpm);
   }
   prev_time = cur_time;
 
-
 }
 
-double configured_rpm = 0;
+double configured_rpm = 0; // consider this min rpm
 bool change_rpm = true;
 bool cycle_started = false;
 long t1 = 0;
 
-void waitForStop() {
-  while (rpm >= 100) {
+void stopAndWaitForStop() {
+  setMotorSpeed(1000, 0);
+  while (rpm >= 1100) {;
+//    Serial.print("J'attend. rpm = ");
+//    Serial.println(rpm);
     delay(10);
   }
+  setMotorSpeed(0, 0);
+  delay(500);
 }
 
 void loop() {
@@ -126,9 +141,7 @@ void loop() {
       configured_rpm = 15000;
       cycle_started = true;
     } else if (rpm >= 14700) {
-      setMotorSpeed(0, 0);
-      configured_rpm = 0;
-      waitForStop()
+      stopAndWaitForStop();
       cycle_started = false;
       return;
     }
@@ -137,8 +150,7 @@ void loop() {
       configured_rpm += 500; // Go in increments of 500 rpm
       if (configured_rpm > 15000) {
         configured_rpm = 0;
-        setMotorSpeed(0, 0);
-        waitForStop()
+        stopAndWaitForStop();
         return;
       }
       setMotorSpeed(configured_rpm, 0);
@@ -150,34 +162,36 @@ void loop() {
     } // else, do nothing. Let test run
   } else if (test_config == 3) { // Vroom vroom bitch
     setMotorSpeed(15000, 0); // You can end this test manually
+    configured_rpm = 15000;
   } else if (test_config == 4) { // You'll need to manually record current draw from power supply
     configured_rpm += 500; // Go in increments of 500 rpm
     if (configured_rpm > 15000) {
       configured_rpm = 0;
-      setMotorSpeed(0, 0);
-      waitForStop()
+      stopAndWaitForStop();
       return;
     }
     setMotorSpeed(configured_rpm, 0);
     delay(3000); // Wait for things to settle
+    Serial.flush();
     Serial.println("Current draw (in Amps):");
+    while (Serial.available() == 0) {}
     float current = Serial.parseFloat();
     Serial.print(configured_rpm);
     Serial.print(", ");
     Serial.print(rpm);
     Serial.print(", ");
-    Serial.print(current);
+    Serial.println(current, 3);
     return;
   }
 
   delay(10);
 
-  Serial.print(timeSec);
+  Serial.print(timeSec, 3);
   Serial.print(", ");
   Serial.print(configured_rpm);
   Serial.print(", ");
   Serial.print(rpm);
   Serial.print(", ");
-  Serial.print(accel);
+  Serial.print(accel, 3);
   Serial.println();
 }

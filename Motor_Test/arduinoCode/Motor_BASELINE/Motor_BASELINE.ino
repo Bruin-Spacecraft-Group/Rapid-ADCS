@@ -80,8 +80,6 @@ void falling() {
   rpm = ((1.0 / (((double) pwm_value) / 1000000.0)) / 6.0) * 60.0;
   totalRPM += rpm;
   timeSec += (((double) pwm_value) / 1000000.0);
-//  Serial.print("timeSec: ");
-//  Serial.println(timeSec);
   count++;
   if(count >= maxCount){
     rpm = totalRPM / (double) maxCount;
@@ -92,7 +90,6 @@ void falling() {
     prev_rpm = rpm;
   }
   prev_time = cur_time;
-
 
 }
 
