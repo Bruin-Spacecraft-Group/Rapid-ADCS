@@ -5,6 +5,9 @@
 
 
 #include <Wire.h>
+#include "GenericFifo.hpp"
+
+using namespace fifolib::generic;
 
 // DAC COMMANDS
 #define ADDR 0b0011101
@@ -32,8 +35,20 @@ double tmp = 0;
 
 int test_config = 0;
 
+struct DataSample {
+  const double timeSec;
+  const double rpm;
+  const double accel;
+};
+
+GenericFifoWriter<sizeof(DataSample)>* writer;
+GenericFifoReader<sizeof(DataSample)>* reader;
+
 void setup() {
   Serial.begin(115200);
+
+  writer = init_writer<sizeof(DataSample)>(1000);
+  reader = open_reader<sizeof(DataSample)>(*writer, 1);
 
   // Setup DAC I2C
   Wire.begin();
@@ -110,6 +125,8 @@ void falling() {
     accel = (rpm - prev_rpm) / ((cur_time - acc_t1) / 1000000.0);
     acc_t1 = cur_time;
     prev_rpm = rpm;
+    const DataSample sample = {timeSec, rpm, accel};
+    writer->try_write(sample);
 //    Serial.print("rpm = ");
 //    Serial.println(rpm);
   }
@@ -132,6 +149,8 @@ void stopAndWaitForStop() {
   setMotorSpeed(0, 0);
   delay(500);
 }
+
+DataSample buffer{};
 
 void loop() {
 
@@ -186,12 +205,7 @@ void loop() {
 
   delay(10);
 
-  Serial.print(timeSec, 3);
-  Serial.print(", ");
-  Serial.print(configured_rpm);
-  Serial.print(", ");
-  Serial.print(rpm);
-  Serial.print(", ");
-  Serial.print(accel, 3);
-  Serial.println();
+  reader->try_read(buffer);
+  const String msg = String(timeSec) + ", " + configured_rpm + ", " + rpm + ", " + accel;
+  Serial.println(msg);
 }
