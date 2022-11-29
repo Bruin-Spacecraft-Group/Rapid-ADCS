@@ -19,6 +19,8 @@ double normalDist[7] = {0.00443185, 0.05399097, 0.24197072, 0.39894228, 0.241970
 double rpms[7];
 double times[4];
 
+bool flop = 0;
+
 void setup() {
   Serial.begin(115200);
 
@@ -82,11 +84,12 @@ void falling() {
 double index = 0;
 void loop() {
   delay(10);
-  index += 10;
-  if(index > 10000){
-    index = 2000;
+  index += 1;
+  if(index > 100){
+    index = 0;
+    flop = !flop;
   }
-  setMotorSpeed(index, 0);
+  setMotorSpeed(3000 + 5000 * flop, 0);
   Serial.print(timeSec, 4);
   Serial.print(", ");
   Serial.print(rpm);
