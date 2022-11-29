@@ -17,6 +17,8 @@ volatile double microSec = 0;
 int delayCycles = 6;
 volatile int cycleIndex = 0;
 
+bool flop = 0;
+
 void setup() {
   Serial.begin(115200);
 
@@ -76,11 +78,12 @@ void falling() {
 double index = 0;
 void loop() {
   delay(10);
-  index += 10;
-  if(index > 10000){
-    index = 2000;
+  index += 1;
+  if(index > 100){
+    index = 0;
+    flop = !flop;
   }
-  setMotorSpeed(index, 0);
+  setMotorSpeed(3000 + 5000 * flop, 0);
   Serial.print(timeSec, 4);
   Serial.print(", ");
   Serial.print(rpm);
