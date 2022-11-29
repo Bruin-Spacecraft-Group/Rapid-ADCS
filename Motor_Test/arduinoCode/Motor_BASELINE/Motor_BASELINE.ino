@@ -9,12 +9,13 @@
 int DIR = 2;
 
 // motor speed detect
-volatile int pwm_value = 0;
-volatile int prev_time = 0;
+volatile long pwm_value = 0;
+volatile long prev_time = 0;
 volatile double rpm = 0;
 volatile double timeSec = 0;
+volatile double microSec = 0;
 int delayCycles = 6;
-int cycleIndex = 0;
+volatile int cycleIndex = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -24,7 +25,9 @@ void setup() {
 
   // Setup motor pins
   pinMode(DIR, OUTPUT);
-  attachInterrupt(1, rising, RISING);
+  attachInterrupt(1, falling, FALLING);
+
+  prev_time = micros();
 }
 
 // Set voltage on DAC
@@ -58,19 +61,15 @@ void setMotorSpeed(double rpm, boolean forward){
   setVoltage(voltageSet);
 }
 
-// interrupts for determining motor speed
-void rising() {
-  attachInterrupt(1, falling, FALLING);
-}
 void falling() {
-  attachInterrupt(1, rising, RISING);
   cycleIndex++;
   if(cycleIndex >= delayCycles){
     cycleIndex = 0;
-    pwm_value = micros() - prev_time;
+    microSec = micros();
+    pwm_value = microSec - prev_time;
+    timeSec = ((microSec + pwm_value / 2.0) / 1000000.0);
+    prev_time = microSec;
     rpm = 60.0 / (((double) pwm_value) / 1000000.0);
-    timeSec += (((double) pwm_value) / 1000000.0);
-    prev_time = micros();
   }
 }
 
@@ -78,11 +77,11 @@ double index = 0;
 void loop() {
   delay(10);
   index += 10;
-  if(index > 15000){
-    index = 1000;
+  if(index > 10000){
+    index = 2000;
   }
   setMotorSpeed(index, 0);
-  Serial.print(timeSec);
+  Serial.print(timeSec, 4);
   Serial.print(", ");
   Serial.print(rpm);
   Serial.println();
