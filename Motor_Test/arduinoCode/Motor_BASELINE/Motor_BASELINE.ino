@@ -14,8 +14,10 @@ volatile long prev_time = 0;
 volatile double rpm = 0;
 volatile double timeSec = 0;
 volatile double microSec = 0;
-int delayCycles = 6;
-volatile int cycleIndex = 0;
+
+double normalDist[7] = {0.00443185, 0.05399097, 0.24197072, 0.39894228, 0.24197072, 0.05399097, 0.00443185};
+double rpms[7];
+double times[4];
 
 void setup() {
   Serial.begin(115200);
@@ -62,15 +64,19 @@ void setMotorSpeed(double rpm, boolean forward){
 }
 
 void falling() {
-  cycleIndex++;
-  if(cycleIndex >= delayCycles){
-    cycleIndex = 0;
-    microSec = micros();
-    pwm_value = microSec - prev_time;
-    timeSec = ((microSec + pwm_value / 2.0) / 1000000.0);
-    prev_time = microSec;
-    rpm = 60.0 / (((double) pwm_value) / 1000000.0);
+  microSec = micros();
+  pwm_value = microSec - prev_time;
+  for(int a=6;a>0;a--){
+    rpms[a] = rpms[a - 1];
   }
+  for(int a=4;a>0;a--){
+    times[a] = times[a - 1];
+  }
+  times[0] = ((microSec + pwm_value / 2.0) / 1000000.0);
+  timeSec = times[3];
+  rpms[0] = 10.0 / (((double) pwm_value) / 1000000.0);
+  rpm = rpms[0] * normalDist[0] + rpms[1] * normalDist[1] + rpms[2] * normalDist[2] + rpms[3] * normalDist[3] + rpms[4] * normalDist[4] + rpms[5] * normalDist[5] + rpms[6] * normalDist[6];
+  prev_time = microSec;
 }
 
 double index = 0;
