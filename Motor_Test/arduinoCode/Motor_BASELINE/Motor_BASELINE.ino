@@ -12,12 +12,9 @@ int DIR = 2;
 volatile int pwm_value = 0;
 volatile int prev_time = 0;
 volatile double rpm = 0;
-volatile int count = 0;
-volatile double totalRPM = 0;
-int maxCount = 10;
 volatile double timeSec = 0;
-volatile double prevTime = 0;
-bool highSpeed = 0;
+int delayCycles = 6;
+int cycleIndex = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -67,30 +64,26 @@ void rising() {
 }
 void falling() {
   attachInterrupt(1, rising, RISING);
-  pwm_value = micros()-prev_time;
-  rpm = 1.0 / (((double) pwm_value) / 1000000.0);
-  rpm = (rpm / 6.0) * 60.0;
-  totalRPM += rpm;
-  timeSec += (((double) pwm_value) / 1000000.0);
-  count++;
-  if(count >= maxCount){
-    rpm = totalRPM / (double) maxCount;
-    Serial.print(timeSec);
-    Serial.print(", ");
-    Serial.print(rpm);
-    Serial.println();
-    count = 0;
-    totalRPM = 0;
+  cycleIndex++;
+  if(cycleIndex >= delayCycles){
+    cycleIndex = 0;
+    pwm_value = micros() - prev_time;
+    rpm = 60.0 / (((double) pwm_value) / 1000000.0);
+    timeSec += (((double) pwm_value) / 1000000.0);
+    prev_time = micros();
   }
-  prev_time = micros();
 }
 
 double index = 0;
 void loop() {
   delay(10);
-  index += 5;
-  if(index > 12000){
-    index = 2000;
+  index += 10;
+  if(index > 15000){
+    index = 1000;
   }
   setMotorSpeed(index, 0);
+  Serial.print(timeSec);
+  Serial.print(", ");
+  Serial.print(rpm);
+  Serial.println();
 }
