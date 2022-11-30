@@ -17,15 +17,20 @@ using namespace fifolib::generic;
 // MOTOR PINS
 int DIR = 2;
 
-// motor speed detect
-volatile int pwm_value = 0;
-volatile int prev_time = 0;
+volatile long pwm_value = 0;
+volatile long prev_time = 0;
 volatile double rpm = 0;
+volatile double timeSec = 0;
+volatile double microSec = 0;
+int delayCycles = 6;
+volatile int cycleIndex = 0;
+long initialTime = 0;
+
+// motor speed detect
 volatile double prev_rpm = 0;
 volatile int count = 0;
 volatile double totalRPM = 0;
 int maxCount = 10;
-volatile double timeSec = 0;
 volatile double prevTime = 0;
 bool highSpeed = 0;
 volatile long acc_t1 = 0;
@@ -64,9 +69,10 @@ void setup() {
   Serial.println("  3. Max speed");
   Serial.println("  4. Current vs continuous speed");
   Serial.println("  5. Frequency response");
+  Serial.println("  6. Custom");
 
-  while (test_config < 1 || test_config > 5) {
-    Serial.print("Please input a number between 1 and 5. ");
+  while (test_config < 1 || test_config > 6) {
+    Serial.print("Please input a number between 1 and 6. ");
     while (Serial.available() == 0) {}
     test_config = Serial.parseInt();
     Serial.println(test_config);
@@ -74,9 +80,10 @@ void setup() {
 
   attachInterrupt(1, falling, FALLING);
 
-  prevTime = micros();
-  t1 = prevTime;
+  prev_time = micros();
+  t1 = prev_time;
   acc_t1 = prev_time;
+  initialTime = micros();
 }
 
 // Set voltage on DAC
@@ -110,20 +117,15 @@ void setMotorSpeed(double rpm, boolean forward){
   setVoltage(voltageSet);
 }
 
-// interrupts to sample motor speed
 void falling() {
-  cur_time = micros();
-  pwm_value = cur_time-prev_time;
-  rpm = ((1.0 / (((double) pwm_value) / 1000000.0)) / 6.0) * 60.0;
-  totalRPM += rpm;
-  timeSec += (((double) pwm_value) / 1000000.0);
-
-  count++;
-  if (count >= maxCount){
-    rpm = totalRPM / (double) maxCount;
-    count = 0;
-    totalRPM = 0;
-    prev_rpm = rpm;
+  cycleIndex++;
+  if(cycleIndex >= delayCycles){
+    cycleIndex = 0;
+    microSec = micros();
+    pwm_value = microSec - prev_time;
+    timeSec = (((microSec + prev_time / 2.0) - initialTime) / 1000000.0);
+    prev_time = microSec;
+    rpm = delayCycles * 10.0 / (((double) pwm_value) / 1000000.0);
 
     const DataSample sample = {timeSec, rpm}; // {timeSec, rpm}
     writer->try_write(sample);
@@ -131,9 +133,7 @@ void falling() {
     if (failedWrites % 10 == 0 && failedWrites > 0) {
       Serial.println(String("Lost: ") + String(failedWrites) + String(" messages"));
     }
-    count = 0;
   }
-  prev_time = cur_time;
 }
 
 double configured_rpm = 0; // consider this min rpm
@@ -153,6 +153,8 @@ DataSample buffer{};
 String suffix("");
 double freq = 0.5;
 double delta_t = 0;
+double index = 0;
+bool flop = 0;
 
 void loop() {
 
@@ -217,6 +219,15 @@ void loop() {
       freq += 0.5;
       delta_t = 0;
     }
+  } else if (test_config == 6) {
+    delay(10);
+    index += 1;
+    if(index > 100){
+      index = 0;
+      flop = !flop;
+    }
+    configured_rpm = 3000 + 5000 * flop;
+    setMotorSpeed(configured_rpm, 0);
   }
 
   // delay(10);
