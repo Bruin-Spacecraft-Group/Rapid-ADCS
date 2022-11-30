@@ -9,20 +9,15 @@
 int DIR = 2;
 
 // motor speed detect
-volatile int pwm_value = 0;
-volatile int prev_time = 0;
+volatile long pwm_value = 0;
+volatile long prev_time = 0;
 volatile double rpm = 0;
-volatile double prev_rpm = 0;
-volatile int count = 0;
-volatile double totalRPM = 0;
-int maxCount = 10;
 volatile double timeSec = 0;
-volatile double prevTime = 0;
-bool highSpeed = 0;
-volatile long acc_t1 = 0;
-volatile double accel = 0;
-volatile double cur_time = 0;
-double tmp = 0;
+volatile double microSec = 0;
+int delayCycles = 6;
+volatile int cycleIndex = 0;
+
+bool flop = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -32,10 +27,9 @@ void setup() {
 
   // Setup motor pins
   pinMode(DIR, OUTPUT);
-  attachInterrupt(1, rising, RISING);
+  attachInterrupt(1, falling, FALLING);
 
-  prevTime = micros();
-  acc_t1 = prev_time;
+  prev_time = micros();
 }
 
 // Set voltage on DAC
@@ -69,44 +63,29 @@ void setMotorSpeed(double rpm, boolean forward){
   setVoltage(voltageSet);
 }
 
-// interrupts for determining motor speed
-void rising() {
-  attachInterrupt(1, falling, FALLING);
-}
 void falling() {
-  attachInterrupt(1, rising, RISING);
-  cur_time = micros();
-  pwm_value = cur_time-prev_time;
-  rpm = ((1.0 / (((double) pwm_value) / 1000000.0)) / 6.0) * 60.0;
-  totalRPM += rpm;
-  timeSec += (((double) pwm_value) / 1000000.0);
-  count++;
-  if(count >= maxCount){
-    rpm = totalRPM / (double) maxCount;
-    count = 0;
-    totalRPM = 0;
-    accel = (rpm - prev_rpm) / ((cur_time - acc_t1) / 1000000.0);
-    acc_t1 = cur_time;
-    prev_rpm = rpm;
+  cycleIndex++;
+  if(cycleIndex >= delayCycles){
+    cycleIndex = 0;
+    microSec = micros();
+    pwm_value = microSec - prev_time;
+    timeSec = ((microSec + pwm_value / 2.0) / 1000000.0);
+    prev_time = microSec;
+    rpm = 60.0 / (((double) pwm_value) / 1000000.0);
   }
-  prev_time = cur_time;
-
 }
 
 double index = 0;
 void loop() {
-  delay(50);
-  index += 25;
-  if(index > 15000){
+  delay(10);
+  index += 1;
+  if(index > 100){
     index = 0;
+    flop = !flop;
   }
-   Serial.print(timeSec*1000);
-   Serial.print(", ");
-   Serial.print(index);
-   Serial.print(", ");
-   Serial.print(rpm);
-   Serial.print(", ");
-   Serial.print(accel);
-   Serial.println();
-  setMotorSpeed(index, 0);
+  setMotorSpeed(3000 + 5000 * flop, 0);
+  Serial.print(timeSec, 4);
+  Serial.print(", ");
+  Serial.print(rpm);
+  Serial.println();
 }
