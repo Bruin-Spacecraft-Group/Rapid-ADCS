@@ -106,7 +106,7 @@ namespace fifolib::generic {
             body = that.body;
             that.body = nullptr;
         }
-    public:
+    protected:
 
         /**
          * Computes the difference between the write_index and the read_index.
@@ -114,6 +114,7 @@ namespace fifolib::generic {
          */
         std::size_t num_messages_to_read() const {
             const std::size_t result = body->write_index - body->read_index;
+//            assert(result <= fifo_size);
             return result;
         }
 
@@ -168,10 +169,6 @@ namespace fifolib::generic {
             return true;
         }
 
-        void clear_buffer() {
-          body->read_index = body->write_index;
-        }
-
         /**
          * If the next message does not need to be copied and can be ignored, then this message simply skips it.
          * @return Whether or not the skip was successful.
@@ -209,18 +206,16 @@ namespace fifolib::generic {
          */
         const std::size_t fifo_size;
 
-        std::size_t failed_writes;
-
     public:
 
         /**
          * Constructor of the GenericFifoWriter. This should not be called by the user.
          */
-        GenericFifoWriter(GenericFifoBody<max_message_size>* body, const std::size_t fifo_size) : body(body), fifo_size(fifo_size), failed_writes(0) {};
+        GenericFifoWriter(GenericFifoBody<max_message_size>* body, const std::size_t fifo_size) : body(body), fifo_size(fifo_size) {};
 
         // Due to the mmapped segment, you can move, but you cannot copy
         GenericFifoWriter(const GenericFifoWriter&) = delete;
-        GenericFifoWriter(GenericFifoWriter&& that) : body(that.body), failed_writes(that.getFailedWrites()) {
+        GenericFifoWriter(GenericFifoWriter&& that) : body(that.body) {
             that.body = nullptr;
         }
     
@@ -228,7 +223,6 @@ namespace fifolib::generic {
         GenericFifoWriter& operator=(GenericFifoWriter&& that) {
             body = that.body;
             that.body = nullptr;
-            failed_writes = that.getFailedWrites();
         }
 
         template<std::size_t max_message_size_>
@@ -265,7 +259,6 @@ namespace fifolib::generic {
         bool try_write(const T& msg) {
             static_assert(sizeof(T) <= max_message_size);
             if (!can_write()) {
-                ++failed_writes;
                 return false;
             }
 
@@ -273,10 +266,6 @@ namespace fifolib::generic {
 
             body->write_index = body->write_index + 1;
             return true;
-        }
-
-        std::size_t getFailedWrites() {
-            return failed_writes;
         }
 
         ~GenericFifoWriter() {
