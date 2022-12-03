@@ -5,14 +5,21 @@ clc; clear variables; close all;
 I_w = 0.5 * 0.05*0.05^2;            % [kg m^2]      Individual reaction wheel inertia about rot. axis
 Ix = 0.03; Iy = 0.04; Iz = 0.07;    % [kg m^2]      Satellite total principal inertias
 I_s = [Ix 0 0; 0 Iy 0; 0 0 Iz];     % [kg m^2]      Satellite total inertia matrix
+% I_s = [
+% 0.04, 0.00, 0.00;
+% 0.00, 0.05, 0.02;
+% 0.00, 0.02, 0.05
+% ];    
 inv_I_s = inv(I_s);                 % [kg^-1 m^-2]  Inverse total inertia matrix
 
-K = .25;         % [] arbitrary positive control parameter
-lambda = .25;    % [] arbitrary positive control parameter
+K = 0.25;         % [] "arbitrary" positive control parameter
+lambda = 0.25;    % [] arbitrary" positive control parameter
+
+ww_dot_max = 10^1000;
 
 %% Initialize simulation parameters
-t0 = 0; tf = 60;            % [s] Simulation initial, final time 
-dt = 0.01;                  % [s] Simulation timestep
+t0 = 0; tf = 700;            % [s] Simulation initial, final time 
+dt = 0.001;                  % [s] Simulation timestep
 N = (tf-t0)/dt + 1;         % [ ] Simulation step count
 t = linspace(t0, tf, N);    % [s] Time vector
 
@@ -22,12 +29,12 @@ psi_0 = deg2rad(0);                     % [rad]   Initial heading
 theta_0 = deg2rad(0);                   % [rad]   Initial pitch
 phi_0 = deg2rad(0);                     % [rad]   Initial roll
 qb0 = TB2quat(psi_0, theta_0, phi_0);   % [ ]     Initial orientation quaternion
-wb0 = [50; 10; 20];                        % [rad/s] Initial angular velocity
+wb0 = [0; 0; 0];                        % [rad/s] Initial angular velocity
 ww0 = [0; 0; 0];                        % [rad/s] Initial wheel angular velocity
 
 % Angle command
-psi_c = deg2rad(135);                   % [rad]   Command heading
-theta_c = deg2rad(40);                   % [rad]   Command pitch
+psi_c = deg2rad(120);                   % [rad]   Command heading
+theta_c = deg2rad(30);                   % [rad]   Command pitch
 phi_c = deg2rad(70);                     % [rad]   Command roll
 qc = TB2quat(psi_c, theta_c, phi_c);    % [ ]     Command quaternion
 
@@ -42,14 +49,13 @@ ww = zeros(3,N);                        % [s^-1]  Reaction wheel speeds
 wb_dot = zeros(3,N);                    % [s^-2]  Body ang. acceleration
 ww_dot = zeros(3,N);                    % [s^-2]  Reaction wheel ang. accelerations
 
-% Initialize simulation variables???
+% Initialize simulation variables
 ww(:,1) = ww0;
 wb(:,1) = wb0;
 qb(:,1) = qb0;
 
 %% Simulate dynamics
 for i = 1:N-1
-    
     % Control: Calculate reaction wheel torque
     qe(:,i) = quatmult(inv_q(qc), qb(:,i));
 
@@ -63,12 +69,20 @@ for i = 1:N-1
     H_w = I_w*ww(:,i); % assume aligned orthogonal wheels, each wheel rot. symmetric
 
     s = we + lambda*sgn(qe(1,i))*qe(2:4,i); % sliding variable
-
-    tau_w = K*I_s*s - cross(wb(:,i),H_s+H_w) - I_s*wr_dot + I_s*lambda*sgn(qe(1,i))*qe_dot(2:4,i);
-    ww_dot(:,i) = tau_w./I_w;
+    
+%     if i >= floor(10/dt) % wait before starting control
+        % Full nonlinear controller
+        tau_w = K*I_s*s - cross(wb(:,i),H_s+H_w) - I_s*wr_dot + I_s*lambda*sgn(qe(1,i))*qe_dot(2:4,i);
+        % PD controller
+%         tau_w = K*I_s*s - I_s*wr_dot + I_s*lambda*sgn(qe(1,i))*qe_dot(2:4,i);
+        ww_dot(:,i) = tau_w./I_w;
+        if (any(abs(ww_dot(:,i)) > ww_dot_max))
+            ww_dot(:,i) = ww_dot(:,i)*ww_dot_max/max(abs(ww_dot(:,i)));
+        end
+%     end
 
     % Dynamic equations
-    wb_dot(:,i) = inv_I_s*(-tau_w - cross(wb(:,i), H_s+H_w));
+    wb_dot(:,i) = inv_I_s*(-(I_w*ww_dot(:,i)) - cross(wb(:,i), H_s+H_w));
     qb_dot(:,i) = 0.5*quatmult(qb(:,i), quat(wb(:,i)));
 
     % Euler method
@@ -124,13 +138,14 @@ plot(t,rad2deg(theta_c)*ones(1,N),'--', "Color","#D95319")
 plot(t,rad2deg(phi_c)*ones(1,N),'--', "Color","#EDB120")
 hold off
 legend('\Psi','\Theta','\Phi')
-ylabel('Orientation Angles [deg]')
+ylabel('Orientation Angles [deg]','Interpreter','Latex')
+title({'$$\vec{\omega}_{0} = [2\pi \ 5\pi \ 3\pi]^T \ rad/s$$','$$\dot{\Omega}_{max} = \infty \ rad/s^2$$'},'Interpreter','Latex')
 
 subplot(2,1,2)
 plot(t,ww)
 legend('\Omega_1','\Omega_2','\Omega_3')
-ylabel('Reaction Wheel Velocity [rad/s]')
-xlabel('Time [s]')
+ylabel('Reaction Wheel Velocity [rad/s]','Interpreter','Latex')
+xlabel('Time [s]','Interpreter','Latex')
 
 %% Save data for simulink animation (optional)
 OrientationTestSimDataVar = [t; ww; deg2rad(psi); deg2rad(theta); deg2rad(phi); wb_I];
