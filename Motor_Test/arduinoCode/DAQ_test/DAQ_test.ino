@@ -24,14 +24,13 @@ volatile double timeSec = 0;
 volatile double microSec = 0;
 int delayCycles = 6;
 volatile int cycleIndex = 0;
-long initialTime = 0;
+double initialTime = 0;
 
 // motor speed detect
 volatile double prev_rpm = 0;
 volatile int count = 0;
 volatile double totalRPM = 0;
 int maxCount = 10;
-volatile double prevTime = 0;
 bool highSpeed = 0;
 volatile long acc_t1 = 0;
 volatile double accel = 0;
@@ -40,6 +39,7 @@ double tmp = 0;
 long t1 = 0;
 
 int test_config = 0;
+bool suppress_lost_messages = false;
 
 struct DataSample {
   const double timeSec;
@@ -61,7 +61,7 @@ void setup() {
   // Setup motor pins
   pinMode(DIR, OUTPUT);
 
-  setMotorSpeed(0, 0);
+  setMotorSpeed(0);
 
   Serial.println("Please configure DAQ test.");
   Serial.println("  1. Speed vs torque");
@@ -81,9 +81,9 @@ void setup() {
   attachInterrupt(1, falling, FALLING);
 
   prev_time = micros();
-  t1 = prev_time;
-  acc_t1 = prev_time;
-  initialTime = micros();
+  t1 = micros();
+  acc_t1 = t1;
+  initialTime = -1;
 }
 
 // Set voltage on DAC
@@ -117,20 +117,26 @@ void setMotorSpeed(double rpm, boolean forward){
   setVoltage(voltageSet);
 }
 
+void setMotorSpeed(double rpm) {
+  if (rpm >= 0) { setMotorSpeed(rpm, true); }
+  else { setMotorSpeed(-rpm, false); }
+}
+
 void falling() {
   cycleIndex++;
   if(cycleIndex >= delayCycles){
     cycleIndex = 0;
     microSec = micros();
     pwm_value = microSec - prev_time;
-    timeSec = (((microSec + prev_time / 2.0) - initialTime) / 1000000.0);
+    timeSec = (((microSec + prev_time / 2.0)) / 1000000.0);
     prev_time = microSec;
     rpm = delayCycles * 10.0 / (((double) pwm_value) / 1000000.0);
 
-    const DataSample sample = {timeSec, rpm}; // {timeSec, rpm}
+    if (initialTime == -1) { initialTime = timeSec; }
+    const DataSample sample = {timeSec - initialTime, rpm}; // {timeSec, rpm}
     writer->try_write(sample);
     std::size_t failedWrites = writer->getFailedWrites();
-    if (failedWrites % 10 == 0 && failedWrites > 0) {
+    if (failedWrites % 10 == 0 && failedWrites > 0 && !suppress_lost_messages) {
       Serial.println(String("Lost: ") + String(failedWrites) + String(" messages"));
     }
   }
@@ -141,26 +147,26 @@ bool change_rpm = true;
 bool cycle_started = false;
 
 void stopAndWaitForStop() {
-  setMotorSpeed(1000, 0);
+  setMotorSpeed(1000);
   while (rpm >= 1100) {;
     delay(10);
   }
-  setMotorSpeed(0, 0);
+  setMotorSpeed(0);
   delay(500);
 }
 
 DataSample buffer{};
 String suffix("");
-double freq = 0.5;
+double freq = 0.2;
 double delta_t = 0;
 double index = 0;
-bool flop = 0;
+int flop = 1;
 
 void loop() {
 
   if (test_config == 1) { // Test maximal speed/torque curve
     if (!cycle_started) {
-      setMotorSpeed(15000, 0);
+      setMotorSpeed(15000);
       configured_rpm = 15000;
       cycle_started = true;
     } else if (buffer.rpm >= 14700) {
@@ -176,7 +182,7 @@ void loop() {
         stopAndWaitForStop();
         return;
       }
-      setMotorSpeed(configured_rpm, 0);
+      setMotorSpeed(configured_rpm);
       cycle_started = true;
       t1 = micros();
     } else if ((micros() - t1) / 1000000.0 >= 5.0) { // 5 seconds to wait for motor velocity to converge
@@ -184,16 +190,17 @@ void loop() {
       return;
     } // else, do nothing. Let test run
   } else if (test_config == 3) { // Vroom vroom bitch
-    setMotorSpeed(15000, 0); // You can end this test manually
+    setMotorSpeed(15000); // You can end this test manually
     configured_rpm = 15000;
   } else if (test_config == 4) { // You'll need to manually record current draw from power supply
+    suppress_lost_messages = true;
     configured_rpm += 500; // Go in increments of 500 rpm
     if (configured_rpm > 15000) {
       configured_rpm = 0;
       stopAndWaitForStop();
       return;
     }
-    setMotorSpeed(configured_rpm, 0);
+    setMotorSpeed(configured_rpm);
     delay(3000); // Wait for things to settle
     Serial.flush();
     Serial.print("Current draw (in Amps): ");
@@ -211,12 +218,12 @@ void loop() {
     delta_t += (t2 - t1)/1000000.00;
     t1 = t2;
 
-    configured_rpm = 15000*sin(2*PI*delta_t*freq);
-    setMotorSpeed(configured_rpm, 0);
+    configured_rpm = 7500 + 7500*sin(2*PI*delta_t*freq);
+    setMotorSpeed(configured_rpm);
     suffix = String(", ") + String(freq);
 
     if (delta_t >= 5) {
-      freq += 0.5;
+      freq += 0.1;
       delta_t = 0;
     }
   } else if (test_config == 6) {
@@ -224,10 +231,10 @@ void loop() {
     index += 1;
     if(index > 100){
       index = 0;
-      flop = !flop;
+//      flop *= -1;
     }
-    configured_rpm = 3000 + 5000 * flop;
-    setMotorSpeed(configured_rpm, 0);
+    configured_rpm = -5000 * flop;
+    setMotorSpeed(configured_rpm);
   }
 
   // delay(10);
