@@ -1,11 +1,12 @@
 #pragma once
 
-#include <ArduinoSTL.h>
+// #include <ArduinoSTL.h>
 
-#include "array"
-#include "stdexcept"
-#include "stdlib.h"
-#include <Wire.h>
+#include <iostream>
+#include <array>
+#include <stdexcept>
+#include <stdlib.h>
+// #include <Wire.h>
 // #include <stdlib.h>
 //#include <cstring>
 // #include <sys/mman.h>
@@ -323,7 +324,7 @@ namespace fifolib::generic {
             delay(10);
         }
         if (writer.body->has_active_reader) {
-            Serial.println("fifolib: Multithread FIFO already has active reader.");
+            std::cout << "fifolib: Multithread FIFO already has active reader." << std::endl;
 //            throw 0;
             return nullptr;
         }

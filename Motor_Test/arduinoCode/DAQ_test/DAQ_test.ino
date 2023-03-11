@@ -4,18 +4,28 @@
  */
 
 
-#include <Wire.h>
+#include <pigpio.h>
+#include <cxxopts.hpp>
+#include <iostream>
+#include <string>
 #include "GenericFifo.hpp"
 
+using std::cout;
+using std::endl;
+using std::cin;
 using namespace fifolib::generic;
 
 // DAC COMMANDS
 #define ADDR 0b0011101
 #define CODE_LOAD 0x01
 #define USER_CONFIG 0b00001000
+#define I2C_BUS 0
 
 // MOTOR PINS
-int DIR = 2;
+const int DIR = 12;
+
+// DAC PINS
+const int GPIO_DAC = 1;
 
 volatile long pwm_value = 0;
 volatile long prev_time = 0;
@@ -40,6 +50,9 @@ long t1 = 0;
 
 int test_config = 0;
 bool suppress_lost_messages = false;
+std::string data_dir;
+
+int i2c_handle;
 
 struct DataSample {
   const double timeSec;
@@ -49,41 +62,64 @@ struct DataSample {
 GenericFifoWriter<sizeof(DataSample)>* writer;
 GenericFifoReader<sizeof(DataSample)>* reader;
 
-void setup() {
-  Serial.begin(115200);
+int main(int argc, char** argv) {
+	cxxopts::Options options("Motor Characterization Test", "Measures the performance characteristics of a DC brushless motor.");
+	options.add_options()
+			("t,test", "Variant of the test. (1-6)", cxxopts::value<int>()->default_value("0"))
+			("s,suppress", "Suppress lost measurements")
+			("d,data-dir", "Directory for gathered data. If not specified, uses present working directory", cxxopts::value<std::string>()->default_value(std::string("")))
+			("b,buffer-size", "Size of the buffer for measurements", cxxopts::value<std::size_t>()->default_value("8"))
+			("no-save", "If used, gathered data is not stored and does not override any previously gathered data. Instead, data is simply printed to cout.")
+			("h,help", "Print usage")
+			;
 
-  writer = init_writer<sizeof(DataSample)>(15);
+	auto result = options.parse(argc, argv);
+
+  if (result.count("help")) {
+    cout << options.help() << endl;
+    exit(0);
+  }
+
+  test_config = result["test"].as<int>();
+	suppress_lost_messages = result["suppress"].as<bool>();
+	data_dir = result["data-dir"].as<std::string>();
+	const std::size_t buffer_size = result["buffer-size"].as<std::size_t>();
+	const bool save = !result["no-save"].as<bool>();
+
+  writer = init_writer<sizeof(DataSample)>(buffer_size);
   reader = open_reader<sizeof(DataSample)>(*writer, 1);
 
-  // Setup DAC I2C
-  Wire.begin();
+  parseTestConfig(test_config);
+  
+  gpioInitialise();
 
   // Setup motor pins
-  pinMode(DIR, OUTPUT);
+  gpioSetMode(DIR, PI_OUTPUT);
+
+  i2c_handle = i2cOpen(I2C_BUS, ADDR, 0);
 
   setMotorSpeed(0);
 
-  Serial.println("Please configure DAQ test.");
-  Serial.println("  1. Speed vs torque");
-  Serial.println("  2. Speed control precision");
-  Serial.println("  3. Max speed");
-  Serial.println("  4. Current vs continuous speed");
-  Serial.println("  5. Frequency response");
-  Serial.println("  6. Custom");
-
-  while (test_config < 1 || test_config > 6) {
-    Serial.print("Please input a number between 1 and 6. ");
-    while (Serial.available() == 0) {}
-    test_config = Serial.parseInt();
-    Serial.println(test_config);
-  }
-
-  attachInterrupt(1, falling, FALLING);
+  gpioSetISRFunc(GPIO_DAC, FALLING_EDGE, 0, falling);
 
   prev_time = micros();
   t1 = micros();
   acc_t1 = t1;
   initialTime = -1;
+}
+
+void parseTestConfig(int& test_config) {
+  if (test_config < 1 || test_config > 6) {
+    cout << "Please configure a valid test." << endl;
+    cout << "  1. Speed vs torque" << endl;
+    cout << "  2. Speed control precision" << endl;
+    cout << "  3. Max speed" << endl;
+    cout << "  4. Current vs continuous speed" << endl;
+    cout << "  5. Frequency response" << endl;
+    cout << "  6. Custom" << endl;
+    cin >> test_config;
+    parseTestConfig(test_config);
+  }
 }
 
 // Set voltage on DAC
@@ -100,18 +136,21 @@ void sendCommand(uint8_t COMMAND, uint16_t DATA){
   data[0] = COMMAND;
   data[1] = (DATA >> 8) & 0xff;
   data[2] = (DATA << 0) & 0xff;
-  Wire.beginTransmission(ADDR);
-  Wire.write(data, 3);
-  Wire.endTransmission();
+  // Wire.beginTransmission(ADDR);
+  // Wire.write(data, 3);
+  // Wire.endTransmission();
+  i2cWriteBlockData(i2c_handle, COMMAND, reinterpret_cast<char*>(data + 1), 3);
 }
 
 // Set motor speed
-void setMotorSpeed(double rpm, boolean forward){
+void setMotorSpeed(double rpm, bool forward){
   if(!forward){
-    digitalWrite(DIR, LOW);
+    // digitalWrite(DIR, LOW);
+    gpioWrite(DIR, PI_LOW);
   }
   else{
-    digitalWrite(DIR, HIGH);
+    // digitalWrite(DIR, HIGH);
+    gpioWrite(DIR, PI_HIGH);
   }
   double voltageSet = (rpm / 15000.0) * 5.0;
   setVoltage(voltageSet);
@@ -122,7 +161,7 @@ void setMotorSpeed(double rpm) {
   else { setMotorSpeed(-rpm, false); }
 }
 
-void falling() {
+void falling(int gpio, int level, uint32_t tick) {
   cycleIndex++;
   if(cycleIndex >= delayCycles){
     cycleIndex = 0;
