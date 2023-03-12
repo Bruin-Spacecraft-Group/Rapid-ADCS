@@ -8,15 +8,26 @@
 #include <cxxopts.hpp>
 #include <iostream>
 #include <string>
+#include <fcntl.h>
+#include <linux/i2c-dev.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <time.h>
+#include <sched.h>
+#include <fstream>
+#include <filesystem>
+#include <cmath>
 #include "GenericFifo.hpp"
 
 using std::cout;
 using std::endl;
 using std::cin;
+using std::cerr;
 using namespace fifolib::generic;
+using namespace std::string_literals;
 
 // DAC COMMANDS
-#define ADDR 0b0011101
+#define ADDR 0b0011101 // TODO: TO BE CHECKED
 #define CODE_LOAD 0x01
 #define USER_CONFIG 0b00001000
 #define I2C_BUS 0
@@ -53,6 +64,7 @@ bool suppress_lost_messages = false;
 std::string data_dir;
 
 int i2c_handle;
+clockid_t clock_id;
 
 struct DataSample {
   const double timeSec;
@@ -62,12 +74,14 @@ struct DataSample {
 GenericFifoWriter<sizeof(DataSample)>* writer;
 GenericFifoReader<sizeof(DataSample)>* reader;
 
+std::ostream* output_p;
+
 int main(int argc, char** argv) {
 	cxxopts::Options options("Motor Characterization Test", "Measures the performance characteristics of a DC brushless motor.");
 	options.add_options()
 			("t,test", "Variant of the test. (1-6)", cxxopts::value<int>()->default_value("0"))
 			("s,suppress", "Suppress lost measurements")
-			("d,data-dir", "Directory for gathered data. If not specified, uses present working directory", cxxopts::value<std::string>()->default_value(std::string("")))
+			("d,data-dir", "Directory for gathered data. If not specified, uses present working directory", cxxopts::value<std::string>()->default_value(std::filesystem::current_path().string() + "/data"))
 			("b,buffer-size", "Size of the buffer for measurements", cxxopts::value<std::size_t>()->default_value("8"))
 			("no-save", "If used, gathered data is not stored and does not override any previously gathered data. Instead, data is simply printed to cout.")
 			("h,help", "Print usage")
@@ -82,21 +96,42 @@ int main(int argc, char** argv) {
 
   test_config = result["test"].as<int>();
 	suppress_lost_messages = result["suppress"].as<bool>();
-	data_dir = result["data-dir"].as<std::string>();
+	data_dir = result["data-dir"].as<std::filesystem::path>();
 	const std::size_t buffer_size = result["buffer-size"].as<std::size_t>();
 	const bool save = !result["no-save"].as<bool>();
 
   writer = init_writer<sizeof(DataSample)>(buffer_size);
   reader = open_reader<sizeof(DataSample)>(*writer, 1);
 
+  std::ofstream of;
+  if (save) {
+    of.open(data_dir);
+    output_p = &of;
+  } else {
+    output_p = &cout;
+  }
+
   parseTestConfig(test_config);
-  
+
+  clock_getcpuclockid(getpid(), &clock_id);
+
   gpioInitialise();
 
   // Setup motor pins
   gpioSetMode(DIR, PI_OUTPUT);
 
-  i2c_handle = i2cOpen(I2C_BUS, ADDR, 0);
+  // i2c_handle = i2cOpen(I2C_BUS, ADDR, 0);
+  std::string filename = "/dev/i2c-1";
+  if ((i2c_handle = open(filename.c_str(), O_RDWR)) < 0) {
+    /* ERROR HANDLING: you can check errno to see what went wrong */
+    cout << "Failed to open the i2c bus" << endl;
+    exit(1);
+  }
+  if (ioctl(i2c_handle, I2C_SLAVE, ADDR) < 0) {
+    cout << "Failed to acquire bus access and/or talk to slave." << endl;
+    /* ERROR HANDLING; you can check errno to see what went wrong */
+    exit(1);
+  }
 
   setMotorSpeed(0);
 
@@ -106,6 +141,11 @@ int main(int argc, char** argv) {
   t1 = micros();
   acc_t1 = t1;
   initialTime = -1;
+
+  while (loop(*output_p)) {}
+
+  close(i2c_handle);
+  if (of.is_open()) of.close();
 }
 
 void parseTestConfig(int& test_config) {
@@ -120,6 +160,16 @@ void parseTestConfig(int& test_config) {
     cin >> test_config;
     parseTestConfig(test_config);
   }
+}
+
+long micros() {
+  timespec t;
+  clock_gettime(clock_id, &t);
+  return t.tv_nsec*1000;
+}
+
+void delay(int milli) {
+  usleep(milli*1000);
 }
 
 // Set voltage on DAC
@@ -139,7 +189,13 @@ void sendCommand(uint8_t COMMAND, uint16_t DATA){
   // Wire.beginTransmission(ADDR);
   // Wire.write(data, 3);
   // Wire.endTransmission();
-  i2cWriteBlockData(i2c_handle, COMMAND, reinterpret_cast<char*>(data + 1), 3);
+
+  // i2cWriteBlockData(i2c_handle, COMMAND, reinterpret_cast<char*>(data + 1), 3);
+  if (write(i2c_handle, data, 3) != 3) {
+    /* ERROR HANDLING: i2c transaction failed */
+    cerr << "Failed to write to the i2c bus." << endl;
+    cerr << "Error: " << errno << endl;
+  }
 }
 
 // Set motor speed
@@ -176,7 +232,7 @@ void falling(int gpio, int level, uint32_t tick) {
     writer->try_write(sample);
     std::size_t failedWrites = writer->getFailedWrites();
     if (failedWrites % 10 == 0 && failedWrites > 0 && !suppress_lost_messages) {
-      Serial.println(String("Lost: ") + String(failedWrites) + String(" messages"));
+      cerr << "Lost: "<< failedWrites << " messages" << endl;
     }
   }
 }
@@ -195,13 +251,19 @@ void stopAndWaitForStop() {
 }
 
 DataSample buffer{};
-String suffix("");
+std::string suffix("");
 double freq = 0.2;
 double delta_t = 0;
 double index = 0;
 int flop = 1;
 
-void loop() {
+std::string to_precision(double number, size_t decimal_places) {
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(decimal_places) << number;
+  return ss.str();
+}
+
+bool loop(std::ostream& output) {
 
   if (test_config == 1) { // Test maximal speed/torque curve
     if (!cycle_started) {
@@ -241,13 +303,15 @@ void loop() {
     }
     setMotorSpeed(configured_rpm);
     delay(3000); // Wait for things to settle
-    Serial.flush();
-    Serial.print("Current draw (in Amps): ");
-    while (Serial.available() == 0) {}
-    float current = Serial.parseFloat();
-    Serial.println(current, 3);
+    cout << "Current draw (in Amps): ";
+    float current;
+    cin >> current;
 
-    suffix = String(", ") + String(current, 3);
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(3) << current;
+    std::string current_fixed_decimal = ss.str();
+
+    suffix = ", "s + current_fixed_decimal;
 
     reader->clear_buffer();
     delay(1500);
@@ -257,9 +321,9 @@ void loop() {
     delta_t += (t2 - t1)/1000000.00;
     t1 = t2;
 
-    configured_rpm = 7500 + 7500*sin(2*PI*delta_t*freq);
+    configured_rpm = 7500 + 7500*std::sin(2*M_PI*delta_t*freq);
     setMotorSpeed(configured_rpm);
-    suffix = String(", ") + String(freq);
+    suffix = ", "s + std::to_string(freq);
 
     if (delta_t >= 5) {
       freq += 0.1;
@@ -280,8 +344,8 @@ void loop() {
 //  Serial.print("Messages to be printed: ");
 //  Serial.println(reader->num_messages_to_read());
   while (reader->try_read(buffer)) {
-    const String msg = String(buffer.timeSec, 4) + String(", ") + String(buffer.rpm, 4) + String(", ") + String(configured_rpm) + suffix;
-    Serial.println(msg);
+    const std::string msg = to_precision(buffer.timeSec, 4) + ", " + to_precision(buffer.rpm, 4) + ", " + std::to_string(configured_rpm) + suffix;
+    output << msg << std::endl;
     
 //    Serial.print(buffer.timeSec);
 //    Serial.print(", ");
@@ -289,4 +353,5 @@ void loop() {
 //    Serial.print(", ");
 //    Serial.println();
   }
+  return true;
 }
