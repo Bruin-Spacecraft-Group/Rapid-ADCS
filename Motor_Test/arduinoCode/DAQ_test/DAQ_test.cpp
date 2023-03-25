@@ -76,6 +76,17 @@ GenericFifoReader<sizeof(DataSample)>* reader;
 
 std::ostream* output_p;
 
+void parseTestConfig(int& test_config);
+long micros();
+void delay(int milli);
+void setVoltage(double VOLTAGE);
+void sendCommand(uint8_t COMMAND, uint16_t DATA);
+void setMotorSpeed(double rpm, bool forward);
+void setMotorSpeed(double rpm);
+void falling(int gpio, int level, uint32_t tick);
+void stopAndWaitForStop();
+bool loop(std::ostream& output);
+
 int main(int argc, char** argv) {
 	cxxopts::Options options("Motor Characterization Test", "Measures the performance characteristics of a DC brushless motor.");
 	options.add_options()
@@ -237,10 +248,6 @@ void falling(int gpio, int level, uint32_t tick) {
   }
 }
 
-double configured_rpm = 0; // consider this min rpm
-bool change_rpm = true;
-bool cycle_started = false;
-
 void stopAndWaitForStop() {
   setMotorSpeed(1000);
   while (rpm >= 1100) {;
@@ -249,6 +256,10 @@ void stopAndWaitForStop() {
   setMotorSpeed(0);
   delay(500);
 }
+
+double configured_rpm = 0; // consider this min rpm
+bool change_rpm = true;
+bool cycle_started = false;
 
 DataSample buffer{};
 std::string suffix("");
@@ -263,6 +274,8 @@ std::string to_precision(double number, size_t decimal_places) {
   return ss.str();
 }
 
+int cycles = 0;
+
 bool loop(std::ostream& output) {
 
   if (test_config == 1) { // Test maximal speed/torque curve
@@ -271,9 +284,10 @@ bool loop(std::ostream& output) {
       configured_rpm = 15000;
       cycle_started = true;
     } else if (buffer.rpm >= 14700) {
+      ++cycles;
       stopAndWaitForStop();
       cycle_started = false;
-      return;
+      return cycles < 5;
     }
   } else if (test_config == 2) { // Speed control precision
     if (!cycle_started) {
@@ -281,25 +295,28 @@ bool loop(std::ostream& output) {
       if (configured_rpm > 15000) {
         configured_rpm = 0;
         stopAndWaitForStop();
-        return;
+        return false;
       }
       setMotorSpeed(configured_rpm);
       cycle_started = true;
       t1 = micros();
     } else if ((micros() - t1) / 1000000.0 >= 5.0) { // 5 seconds to wait for motor velocity to converge
       cycle_started = false;
-      return;
+      return true;
     } // else, do nothing. Let test run
   } else if (test_config == 3) { // Vroom vroom bitch
     setMotorSpeed(15000); // You can end this test manually
     configured_rpm = 15000;
+    if ((micros() - t1) / 1000000.0 >= 10.0) {
+      return false;
+    }
   } else if (test_config == 4) { // You'll need to manually record current draw from power supply
     suppress_lost_messages = true;
     configured_rpm += 500; // Go in increments of 500 rpm
     if (configured_rpm > 15000) {
       configured_rpm = 0;
       stopAndWaitForStop();
-      return;
+      return false;
     }
     setMotorSpeed(configured_rpm);
     delay(3000); // Wait for things to settle
@@ -321,14 +338,18 @@ bool loop(std::ostream& output) {
     delta_t += (t2 - t1)/1000000.00;
     t1 = t2;
 
+    if (delta_t >= 5) {
+      freq += 0.2;
+      delta_t = 0;
+      if (freq >= 2) {
+        return false;
+      }
+    }
+
     configured_rpm = 7500 + 7500*std::sin(2*M_PI*delta_t*freq);
     setMotorSpeed(configured_rpm);
     suffix = ", "s + std::to_string(freq);
 
-    if (delta_t >= 5) {
-      freq += 0.1;
-      delta_t = 0;
-    }
   } else if (test_config == 6) {
     delay(10);
     index += 1;

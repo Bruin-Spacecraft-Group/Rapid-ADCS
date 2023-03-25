@@ -321,7 +321,7 @@ namespace fifolib::generic {
             if (!writer.body->has_active_reader) {
                 break;
             }
-            delay(10);
+            usleep(10000);
         }
         if (writer.body->has_active_reader) {
             std::cout << "fifolib: Multithread FIFO already has active reader." << std::endl;
