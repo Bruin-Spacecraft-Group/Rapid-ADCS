@@ -14,7 +14,7 @@ class Motor_test {
   template <std::size_t max_message_size>
   using GenericFifoReader =
       fifolib::generic::GenericFifoReader<max_message_size>;
-  using high_resolution_clock = std::chrono::high_resolution_clock;
+  using steady_clock = std::chrono::steady_clock;
   template <typename T>
   using time_point = std::chrono::time_point<T>;
 
@@ -27,8 +27,8 @@ class Motor_test {
   GenericFifoReader<sizeof(DataSample)>* reader;
   DataSample buffer;
   std::atomic<double> rpm;
-  std::atomic<time_point<high_resolution_clock>> start;
-  std::atomic<time_point<high_resolution_clock>> cur;
+  std::atomic<time_point<steady_clock>> start;
+  std::atomic<time_point<steady_clock>> cur;
   std::atomic<bool> suppress_lost_messages;
   std::size_t buffer_size;
   std::size_t i2c_handle;
@@ -40,8 +40,8 @@ class Motor_test {
   void setRPM(double rpm);
   virtual bool loop(std::ostream& output) = 0;
   void stopAndWaitForStop() const;
-  time_point<high_resolution_clock> getStartTime() const;
-  time_point<high_resolution_clock> getCurTime() const;
+  time_point<steady_clock> getStartTime() const;
+  time_point<steady_clock> getCurTime() const;
   bool suppressLostMessages() const;
   void setMotorSpeed(double rpm) const;
   virtual ~Motor_test();
@@ -50,7 +50,7 @@ class Motor_test {
 struct falling {
   fifolib::generic::GenericFifoWriter<sizeof(DataSample)>* writer;
   Motor_test* motor_test;
-  std::chrono::time_point<std::chrono::high_resolution_clock> prev;
+  std::chrono::time_point<std::chrono::steady_clock> prev;
   size_t cycleIndex;
 
   falling();
@@ -76,7 +76,9 @@ class Speed_v_torque : public Motor_test {
  public:
   template <typename... Args>
   Speed_v_torque(Args&&... args)
-      : Motor_test(std::forward<decltype(args)>(args)...), cycle_started(false), cycles(0) {}
+      : Motor_test(std::forward<decltype(args)>(args)...),
+        cycle_started(false),
+        cycles(0) {}
   virtual bool loop(std::ostream& output);
 };
 
@@ -84,7 +86,7 @@ class Speed_control_precision : public Motor_test {
  private:
   bool cycle_started;
   int configured_rpm;
-  std::chrono::time_point<std::chrono::high_resolution_clock> t1;
+  std::chrono::time_point<std::chrono::steady_clock> t1;
 
  public:
   template <typename... Args>
@@ -99,7 +101,8 @@ class Speed_control_precision : public Motor_test {
 class Max_speed : public Motor_test {
  public:
   template <typename... Args>
-  Max_speed(Args&&... args) : Motor_test(std::forward<decltype(args)>(args)...) {}
+  Max_speed(Args&&... args)
+      : Motor_test(std::forward<decltype(args)>(args)...) {}
   virtual bool loop(std::ostream& output);
 };
 
@@ -116,7 +119,7 @@ class Current_draw : public Motor_test {
 
 class Frequency_response : public Motor_test {
  private:
-  std::chrono::time_point<std::chrono::high_resolution_clock> t1;
+  std::chrono::time_point<std::chrono::steady_clock> t1;
   double freq;
 
  public:
@@ -133,6 +136,7 @@ class Custom_test : public Motor_test {
 
  public:
   template <typename... Args>
-  Custom_test(Args&&... args) : Motor_test(std::forward<decltype(args)>(args)...), count(0), flop(1) {}
+  Custom_test(Args&&... args)
+      : Motor_test(std::forward<decltype(args)>(args)...), count(0), flop(1) {}
   virtual bool loop(std::ostream& output);
 };

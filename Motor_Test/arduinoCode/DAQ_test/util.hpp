@@ -18,6 +18,9 @@ constexpr const int DIR = 12;
 constexpr const int GPIO_DAC = 1;
 
 constexpr const int TICKS_FOR_AVERAGE = 1;
+constexpr const double MAX_FREQUENCY = 2;
+constexpr const double FREQUENCY_START = 0.2;
+constexpr const double FREQENCY_STEP = 0.2;
 
 struct DataSample {
   const double timeSec = 0;

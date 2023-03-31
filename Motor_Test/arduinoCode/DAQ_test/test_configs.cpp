@@ -51,7 +51,7 @@ void Motor_test::setup() {
       GPIO_DAC, FALLING_EDGE, 0,
       [](int gpio, int level, uint32_t tick) { callback(gpio, level, tick); });
 
-  auto tmp = chrono::high_resolution_clock::now();
+  auto tmp = chrono::steady_clock::now();
   start = tmp;
   cur = tmp;
 }
@@ -69,13 +69,11 @@ void Motor_test::stopAndWaitForStop() const {
   delay(500);
 }
 
-chrono::time_point<chrono::high_resolution_clock> Motor_test::getStartTime()
-    const {
+chrono::time_point<chrono::steady_clock> Motor_test::getStartTime() const {
   return start;
 }
 
-chrono::time_point<chrono::high_resolution_clock> Motor_test::getCurTime()
-    const {
+chrono::time_point<chrono::steady_clock> Motor_test::getCurTime() const {
   return cur;
 }
 
@@ -90,6 +88,7 @@ void Motor_test::setMotorSpeed(double rpm) const {
 Motor_test::~Motor_test() {
   delete reader;
   close(i2c_handle);
+  gpioSetISRFunc(GPIO_DAC, FALLING_EDGE, 0, NULL);
   gpioTerminate();
 }
 
@@ -140,7 +139,7 @@ falling::~falling() {
 // 6. Custom
 
 bool Speed_v_torque::loop(std::ostream& output) {
-  cur = chrono::high_resolution_clock::now();
+  cur = chrono::steady_clock::now();
 
   double configured_rpm = 0;
   if (!cycle_started) {
@@ -164,7 +163,7 @@ bool Speed_v_torque::loop(std::ostream& output) {
 }
 
 bool Speed_control_precision::loop(std::ostream& output) {
-  cur = chrono::high_resolution_clock::now();
+  cur = chrono::steady_clock::now();
 
   if (!cycle_started) {
     configured_rpm += 500;  // Go in increments of 500 rpm
@@ -175,9 +174,9 @@ bool Speed_control_precision::loop(std::ostream& output) {
     }
     setMotorSpeed(configured_rpm);
     cycle_started = true;
-    t1 = chrono::high_resolution_clock::now();
+    t1 = chrono::steady_clock::now();
   } else {  // 5 seconds to wait for motor velocity to converge
-    // auto t2 = chrono::high_resolution_clock::now();
+    // auto t2 = chrono::steady_clock::now();
     std::chrono::duration<double> t = getCurTime() - t1;
     if (t.count() >= 5) {
       cycle_started = false;
@@ -195,7 +194,7 @@ bool Speed_control_precision::loop(std::ostream& output) {
 }
 
 bool Max_speed::loop(std::ostream& output) {
-  cur = chrono::high_resolution_clock::now();
+  cur = chrono::steady_clock::now();
   std::chrono::duration<double> t = getCurTime() - getStartTime();
 
   setMotorSpeed(15000);  // You can end this test manually
@@ -214,7 +213,7 @@ bool Max_speed::loop(std::ostream& output) {
 }
 
 bool Current_draw::loop(std::ostream& output) {
-  cur = chrono::high_resolution_clock::now();
+  cur = chrono::steady_clock::now();
 
   suppress_lost_messages = true;
   configured_rpm += 500;  // Go in increments of 500 rpm
@@ -246,20 +245,22 @@ bool Current_draw::loop(std::ostream& output) {
 }
 
 bool Frequency_response::loop(std::ostream& output) {
-  cur = chrono::high_resolution_clock::now();
+  cur = chrono::steady_clock::now();
   if (freq == 0) {
-    freq = 0.2;
+    freq = FREQUENCY_START;
     t1 = getCurTime();
+  }
+  if (freq > MAX_FREQUENCY) {
+    return false;
   }
 
   std::chrono::duration<double> t_ = getCurTime() - t1;
   double t = t_.count();
-  // delta_t += (t2 - t1) / 1000000.00;
-  // t1 = t2;
+
   double time_for_periods = 5 / freq;  // # of periods/frequency (hz)
   if (t >= time_for_periods) {
     t = 0;
-    freq += 0.2;
+    freq += FREQENCY_STEP;
     t1 = getCurTime();
     if (freq >= 2) {
       return false;

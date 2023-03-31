@@ -14,9 +14,6 @@ message(NOTICE "Cmake build type: ${CMAKE_BUILD_TYPE}")
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 	message(NOTICE "Debug mode: enabling -O0")
   target_compile_options(characterization_test PUBLIC -fstandalone-debug -O0 -march=native -DNATIVE)
-  target_compile_options(characterization_test PUBLIC -fstandalone-debug -O0 -march=native -DNATIVE)
-  target_compile_options(characterization_test PUBLIC -fstandalone-debug -O0 -march=native -DNATIVE)
-
 endif()
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -26,4 +23,4 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g")
 
-target_link_libraries(characterization_test pigpio)
+target_link_libraries(characterization_test pigpio pthread)

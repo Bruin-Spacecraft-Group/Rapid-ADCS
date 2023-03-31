@@ -73,7 +73,8 @@ int main(int argc, char** argv) {
       break;
   }
 
-  while (mt->loop(*output_p)) {}
+  while (mt->loop(*output_p)) {
+  }
 
   if (of.is_open())
     of.close();
