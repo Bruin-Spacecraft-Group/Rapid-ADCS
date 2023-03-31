@@ -1,23 +1,22 @@
 #pragma once
 
-// #include <ArduinoSTL.h>
-
 #include <iostream>
 #include <array>
 #include <stdexcept>
 #include <stdlib.h>
-// #include <Wire.h>
-// #include <stdlib.h>
-//#include <cstring>
-// #include <sys/mman.h>
-// #include <sys/stat.h>
-// #include <fcntl.h>
-// #include <cstddef>
-// #include <unistd.h>
-// #include <iostream>
-//#include <errno.h>
+#include <unistd.h>
+#include <string.h>
 
 namespace fifolib::generic {
+
+    template<std::size_t max_message_size>
+    class GenericFifoReader;
+
+    template<std::size_t max_message_size>
+    class GenericFifoWriter;
+
+    template<std::size_t max_message_size>
+    GenericFifoReader<max_message_size>* open_reader(const GenericFifoWriter<max_message_size>& writer, const std::size_t timeout_tries);
     /**
      * GenericFifoBody is a class that holds the shared objects for the generic FIFO. This class should not be called by the user.
      * @tparam max_message_size Size of the largest message that will go into the FIFO in bytes.
@@ -55,7 +54,7 @@ namespace fifolib::generic {
         /**
          * The number of bytes that come before the beginning of the array of messages inside the GenericFifoBody.
          */
-        static constexpr const std::size_t buffer_ofs = sizeof(bool)*2 + sizeof(std::size_t)*2;
+        static constexpr const std::size_t buffer_ofs = sizeof(GenericFifoBody<max_message_size>);
 
         /**
          * Returns the pointer to the beginning of the array of messages, made up of cell_types.
@@ -284,6 +283,8 @@ namespace fifolib::generic {
             body->has_active_writer = false;
             free(body);
         }
+
+        friend GenericFifoReader<max_message_size>* open_reader<max_message_size>(const GenericFifoWriter<max_message_size>& writer, const std::size_t timeout_tries);
     };
 
     /**
@@ -295,7 +296,7 @@ namespace fifolib::generic {
      */
     template<std::size_t max_message_size>
     GenericFifoWriter<max_message_size>* init_writer(const std::size_t fifo_size) {
-        static_assert(sizeof(GenericFifoBody<max_message_size>) == sizeof(bool)*2 + sizeof(std::size_t)*2);
+        // static_assert(sizeof(GenericFifoBody<max_message_size>) == sizeof(std::uint64_t) + sizeof(std::size_t)*2);
         const int len = sizeof(GenericFifoBody<max_message_size>) + fifo_size*sizeof(typename GenericFifoBody<max_message_size>::cell_type);
         auto* const ptr = reinterpret_cast<GenericFifoBody<max_message_size>*>(malloc(len));
         ptr->has_active_writer = true;
@@ -316,7 +317,7 @@ namespace fifolib::generic {
      * @throws std::runtime_error If there is already an active reader, then the method fails.
      */
     template<std::size_t max_message_size>
-    GenericFifoReader<max_message_size>* open_reader(GenericFifoWriter<max_message_size>& writer, const std::size_t timeout_tries) {
+    GenericFifoReader<max_message_size>* open_reader(const GenericFifoWriter<max_message_size>& writer, const std::size_t timeout_tries) {
         for (std::size_t tries = 0; tries < timeout_tries; ++tries) {
             if (!writer.body->has_active_reader) {
                 break;

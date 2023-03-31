@@ -49,7 +49,6 @@ double initialTime = 0;
 
 // motor speed detect
 volatile double prev_rpm = 0;
-volatile int count = 0;
 volatile double totalRPM = 0;
 int maxCount = 10;
 bool highSpeed = 0;
@@ -176,7 +175,7 @@ void parseTestConfig(int& test_config) {
 long micros() {
   timespec t;
   clock_gettime(clock_id, &t);
-  return t.tv_nsec*1000;
+  return t.tv_nsec/1000;
 }
 
 void delay(int milli) {
@@ -229,7 +228,7 @@ void setMotorSpeed(double rpm) {
 }
 
 void falling(int gpio, int level, uint32_t tick) {
-  cycleIndex++;
+  cycleIndex = cycleIndex + 1;
   if(cycleIndex >= delayCycles){
     cycleIndex = 0;
     microSec = micros();
@@ -265,7 +264,7 @@ DataSample buffer{};
 std::string suffix("");
 double freq = 0.2;
 double delta_t = 0;
-double index = 0;
+double count = 0;
 int flop = 1;
 
 std::string to_precision(double number, size_t decimal_places) {
@@ -346,15 +345,16 @@ bool loop(std::ostream& output) {
       }
     }
 
+    //TODO: Change code so you don't get discontinuous sine
     configured_rpm = 7500 + 7500*std::sin(2*M_PI*delta_t*freq);
     setMotorSpeed(configured_rpm);
     suffix = ", "s + std::to_string(freq);
 
   } else if (test_config == 6) {
     delay(10);
-    index += 1;
-    if(index > 100){
-      index = 0;
+    count += 1;
+    if(count > 100){
+      return false;
 //      flop *= -1;
     }
     configured_rpm = -5000 * flop;
