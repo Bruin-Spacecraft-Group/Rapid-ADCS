@@ -12,10 +12,10 @@ constexpr const uint8_t USER_CONFIG = 0b00001000;
 constexpr const std::size_t I2C_BUS = 0;
 
 // MOTOR PINS
-constexpr const int DIR = 12;
+constexpr const int DIR = 4;
 
 // DAC PINS
-constexpr const int GPIO_DAC = 1;
+constexpr const int GPIO_DAC = 17;
 
 constexpr const int TICKS_FOR_AVERAGE = 1;
 constexpr const double MAX_FREQUENCY = 2;

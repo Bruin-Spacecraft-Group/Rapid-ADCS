@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include "GenericFifo.hpp"
 #include "cxxopts.hpp"
 #include "test_configs.hpp"
@@ -36,7 +37,7 @@ int main(int argc, char** argv) {
   int test_config = result["test"].as<int>();
   const bool suppress_lost_messages = result["suppress"].as<bool>();
   std::filesystem::path data_dir =
-      result["data-dir"].as<std::filesystem::path>();
+      result["data-dir"].as<std::string>();
   const std::size_t buffer_size = result["buffer-size"].as<std::size_t>();
   const bool save = !result["no-save"].as<bool>();
 
@@ -73,6 +74,8 @@ int main(int argc, char** argv) {
       break;
   }
 
+  // *output_p << "banana" << std::endl;
+  mt->setup();
   while (mt->loop(*output_p)) {
   }
 

@@ -1,4 +1,5 @@
 #include "test_configs.hpp"
+#include "util.hpp"
 #include <fcntl.h>
 #include <linux/i2c-dev.h>
 #include <pigpio.h>
@@ -6,7 +7,7 @@
 #include <cmath>
 #include <iomanip>
 #include <string>
-#include "util.hpp"
+#include <errno.h>
 
 using namespace std;
 using namespace fifolib::generic;
@@ -31,11 +32,11 @@ Motor_test::Motor_test(bool suppress_lost_messages, size_t buffer_size)
   std::string filename = "/dev/i2c-1";
   if ((i2c_handle = open(filename.c_str(), O_RDWR)) < 0) {
     /* ERROR HANDLING: you can check errno to see what went wrong */
-    cout << "Failed to open the i2c bus" << endl;
+    cout << "Failed to open the i2c bus: " << errno << endl;
     exit(1);
   }
   if (ioctl(i2c_handle, I2C_SLAVE, ADDR) < 0) {
-    cout << "Failed to acquire bus access and/or talk to slave." << endl;
+    cout << "Failed to acquire bus access and/or talk to slave: " << errno << endl;
     /* ERROR HANDLING; you can check errno to see what went wrong */
     exit(1);
   }
@@ -61,12 +62,13 @@ void Motor_test::setRPM(double rpm) {
 }
 
 void Motor_test::stopAndWaitForStop() const {
-  setMotorSpeed(1000);
-  while (rpm >= 1100) {
-    delay(10);
-  }
+  // setMotorSpeed(1000);
+  // while (rpm >= 1100) {
+  //   delay(10);
+  // }
+  // setMotorSpeed(0);
+  // delay(500);
   setMotorSpeed(0);
-  delay(500);
 }
 
 chrono::time_point<chrono::steady_clock> Motor_test::getStartTime() const {
@@ -86,6 +88,7 @@ void Motor_test::setMotorSpeed(double rpm) const {
 }
 
 Motor_test::~Motor_test() {
+  setMotorSpeed(0);
   delete reader;
   close(i2c_handle);
   gpioSetISRFunc(GPIO_DAC, FALLING_EDGE, 0, NULL);
@@ -180,7 +183,6 @@ bool Speed_control_precision::loop(std::ostream& output) {
     std::chrono::duration<double> t = getCurTime() - t1;
     if (t.count() >= 5) {
       cycle_started = false;
-      return false;
     }
   }  // else, do nothing. Let test run
 

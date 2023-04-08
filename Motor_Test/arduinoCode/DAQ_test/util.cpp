@@ -32,6 +32,7 @@ void setVoltage(double VOLTAGE, int i2c_handle) {
 
 // Send command to DAC
 void sendCommand(uint8_t COMMAND, uint16_t DATA, int i2c_handle) {
+  // cout << "DATA: " << (int)DATA << endl;
   uint8_t data[3];
   data[0] = COMMAND;
   data[1] = (DATA >> 8) & 0xff;
