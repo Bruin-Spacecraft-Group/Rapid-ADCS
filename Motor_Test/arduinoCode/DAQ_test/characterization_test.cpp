@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <pigpio.h>
 #include "GenericFifo.hpp"
 #include "cxxopts.hpp"
 #include "test_configs.hpp"
@@ -9,6 +10,9 @@
 using namespace std;
 
 int main(int argc, char** argv) {
+  gpioInitialise();
+  setMotorSpeed(0);
+
   cxxopts::Options options(
       "Motor Characterization Test",
       "Measures the performance characteristics of a DC brushless motor.");
@@ -77,4 +81,5 @@ int main(int argc, char** argv) {
     of.close();
 
   delete mt;
+  gpioTerminate();
 }

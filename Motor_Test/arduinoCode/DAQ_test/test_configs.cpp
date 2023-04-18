@@ -15,8 +15,6 @@ using namespace fifolib::generic;
 falling Motor_test::callback{};
 
 Motor_test::Motor_test() : rpm(0), configured_rpm(0), start(), cur() {
-  gpioInitialise();
-
   // Setup motor pins
   gpioSetMode(DIR_PIN, PI_OUTPUT);
   gpioSetMode(PWM_PIN, PI_ALT0);
@@ -41,14 +39,10 @@ void Motor_test::setRPM(double rpm) {
   this->rpm = rpm;
 }
 
-void Motor_test::stopAndWaitForStop() const {
-  // setMotorSpeed(1000);
-  // while (rpm >= 1100) {
-  //   delay(10);
-  // }
-  // setMotorSpeed(0);
-  // delay(500);
-  setMotorSpeed(0);
+void Motor_test::stopAndWaitForStop() {
+  setMotorSpeed(700);
+  begin_slow = true;
+  wait_start = chrono::steady_clock::now();
 }
 
 chrono::time_point<chrono::steady_clock> Motor_test::getStartTime() const {
@@ -63,10 +57,30 @@ std::string Motor_test::test_data() const {
   return "";
 }
 
+bool Motor_test::loop_init() {
+  cur = chrono::steady_clock::now();
+  if (begin_slow) {
+    if (rpm <= 800) {
+      begin_slow = false;
+      stop = true;
+      setMotorSpeed(0);
+      wait_start = cur;
+    }
+    return false;
+  } else if (stop) {
+    chrono::duration<double> t = getCurTime() - wait_start;
+    if (t.count() >= 0.6) {
+      stop = false;
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
+
 Motor_test::~Motor_test() {
   setMotorSpeed(0);
   gpioSetISRFunc(INTERRUPT_PIN, FALLING_EDGE, 0, NULL);
-  gpioTerminate();
 }
 
 falling::falling()
@@ -107,15 +121,17 @@ falling::~falling() {}
 // 6. Custom
 
 bool Speed_v_torque::loop() {
-  cur = chrono::steady_clock::now();
+  if (!loop_init()) {
+    return true;
+  }
 
-  configured_rpm = 0;
   if (!cycle_started) {
     setMotorSpeed(15000);
     configured_rpm = 15000;
     cycle_started = true;
   } else if (rpm >= 14700) {
     ++cycles;
+    configured_rpm = 0;
     stopAndWaitForStop();
     cycle_started = false;
     return cycles < 5;
@@ -128,7 +144,9 @@ std::string Speed_v_torque::test_data() const {
 }
 
 bool Speed_control_precision::loop() {
-  cur = chrono::steady_clock::now();
+  if (!loop_init()) {
+    return true;
+  }
 
   if (!cycle_started) {
     configured_rpm += 500;  // Go in increments of 500 rpm
@@ -142,7 +160,7 @@ bool Speed_control_precision::loop() {
     t1 = chrono::steady_clock::now();
   } else {  // 5 seconds to wait for motor velocity to converge
     // auto t2 = chrono::steady_clock::now();
-    std::chrono::duration<double> t = getCurTime() - t1;
+    chrono::duration<double> t = getCurTime() - t1;
     if (t.count() >= 5) {
       cycle_started = false;
     }
@@ -155,7 +173,10 @@ std::string Speed_control_precision::test_data() const {
 }
 
 bool Max_speed::loop() {
-  cur = chrono::steady_clock::now();
+  if (!loop_init()) {
+    return true;
+  }
+
   std::chrono::duration<double> t = getCurTime() - getStartTime();
 
   setMotorSpeed(15000);  // You can end this test manually
@@ -171,14 +192,16 @@ std::string Max_speed::test_data() const {
 }
 
 bool Current_draw::loop() {
-  cur = chrono::steady_clock::now();
+  if (!loop_init()) {
+    return true;
+  }
 
   is_valid = false;
 
   configured_rpm += 500;  // Go in increments of 500 rpm
   if (configured_rpm > 15000) {
     configured_rpm = 0;
-    stopAndWaitForStop();
+    // stopAndWaitForStop();
     return false;
   }
   setMotorSpeed(configured_rpm);
@@ -201,8 +224,16 @@ std::string Current_draw::test_data() const {
          std::to_string(is_valid);
 }
 
+Current_draw::~Current_draw() {
+  is_done = true;
+  clock_updater.join();
+}
+
 bool Frequency_response::loop() {
-  cur = chrono::steady_clock::now();
+  if (!loop_init()) {
+    return true;
+  }
+
   if (freq == 0) {
     freq = FREQUENCY_START;
     t1 = getCurTime();
@@ -219,7 +250,7 @@ bool Frequency_response::loop() {
     t = 0;
     freq += FREQENCY_STEP;
     t1 = getCurTime();
-    if (freq >= 2) {
+    if (freq > MAX_FREQUENCY) {
       return false;
     }
   }
@@ -237,9 +268,12 @@ std::string Frequency_response::test_data() const {
 }
 
 bool Custom_test::loop() {
-  delay(10);
+  if (!loop_init()) {
+    return true;
+  }
+
   count += 1;
-  if (count > 100) {
+  if (count > 1000) {
     return false;
     //      flop *= -1;
   }

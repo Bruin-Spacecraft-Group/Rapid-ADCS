@@ -4,6 +4,7 @@
 #include <chrono>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include "GenericFifo.hpp"
 #include "util.hpp"
@@ -27,16 +28,22 @@ class Motor_test {
 
   std::atomic<float> rpm;
   std::atomic<float> configured_rpm;
-  std::atomic<time_point<steady_clock>> start; // Undefined behavior?
+  std::atomic<time_point<steady_clock>> start;  // Undefined behavior?
   std::atomic<time_point<steady_clock>> cur;
+  time_point<steady_clock> wait_start;
+  bool begin_slow;
+  bool stop;
+  // bool wait;
+  // float wait_time;
 
   Motor_test();
 
  public:
   void setup(std::ostream& output);
   void setRPM(double rpm);
+  bool loop_init();
   virtual bool loop() = 0;
-  void stopAndWaitForStop() const;
+  void stopAndWaitForStop();
   time_point<steady_clock> getStartTime() const;
   time_point<steady_clock> getCurTime() const;
   virtual std::string test_data() const;
@@ -105,13 +112,24 @@ class Current_draw : public Motor_test {
  private:
   float current_draw;
   bool is_valid;
+  std::atomic<bool> is_done;
+  std::thread clock_updater;
 
  public:
   template <typename... Args>
   Current_draw(Args&&... args)
-      : Motor_test(std::forward<decltype(args)>(args)...), current_draw(0), is_valid(false) {}
+      : Motor_test(std::forward<decltype(args)>(args)...),
+        current_draw(0),
+        is_valid(false),
+        is_done(false),
+        clock_updater([&]{ // Not very proud of this
+          while (!is_done) {
+            cur = std::chrono::steady_clock::now();
+          }
+        }) {}
   virtual bool loop();
   virtual std::string test_data() const;
+  virtual ~Current_draw();
 };
 
 class Frequency_response : public Motor_test {
