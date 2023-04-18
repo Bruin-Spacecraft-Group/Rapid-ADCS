@@ -14,15 +14,12 @@ int main(int argc, char** argv) {
       "Measures the performance characteristics of a DC brushless motor.");
   options.add_options()("t,test", "Variant of the test. (1-6)",
                         cxxopts::value<int>()->default_value("0"))(
-      "s,suppress", "Suppress lost measurements")(
       "d,data-dir",
       "Directory for gathered data. If not specified, uses present working "
       "directory",
       cxxopts::value<std::string>()->default_value(
           std::filesystem::current_path().string() + "/data"))(
-      "b,buffer-size", "Size of the buffer for measurements",
-      cxxopts::value<std::size_t>()->default_value("8"))(
-      "no-save",
+      "save",
       "If used, gathered data is not stored and does not override any "
       "previously gathered data. Instead, data is simply printed to cout.")(
       "h,help", "Print usage");
@@ -35,11 +32,8 @@ int main(int argc, char** argv) {
   }
 
   int test_config = result["test"].as<int>();
-  const bool suppress_lost_messages = result["suppress"].as<bool>();
-  std::filesystem::path data_dir =
-      result["data-dir"].as<std::string>();
-  const std::size_t buffer_size = result["buffer-size"].as<std::size_t>();
-  const bool save = !result["no-save"].as<bool>();
+  std::filesystem::path data_dir = result["data-dir"].as<std::string>();
+  const bool save = result["save"].as<bool>();
 
   std::ostream* output_p;
   std::ofstream of;
@@ -55,28 +49,28 @@ int main(int argc, char** argv) {
   Motor_test* mt;
   switch (test_config) {
     case 1:
-      mt = new Speed_v_torque(suppress_lost_messages, buffer_size);
+      mt = new Speed_v_torque();
       break;
     case 2:
-      mt = new Speed_control_precision(suppress_lost_messages, buffer_size);
+      mt = new Speed_control_precision();
       break;
     case 3:
-      mt = new Max_speed(suppress_lost_messages, buffer_size);
+      mt = new Max_speed();
       break;
     case 4:
-      mt = new Current_draw(suppress_lost_messages, buffer_size);
+      mt = new Current_draw();
       break;
     case 5:
-      mt = new Frequency_response(suppress_lost_messages, buffer_size);
+      mt = new Frequency_response();
       break;
     default:
-      mt = new Custom_test(suppress_lost_messages, buffer_size);
+      mt = new Custom_test();
       break;
   }
 
   // *output_p << "banana" << std::endl;
-  mt->setup();
-  while (mt->loop(*output_p)) {
+  mt->setup(*output_p);
+  while (mt->loop()) {
   }
 
   if (of.is_open())

@@ -1,5 +1,5 @@
 #include "test_configs.hpp"
-#include "util.hpp"
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/i2c-dev.h>
 #include <pigpio.h>
@@ -7,49 +7,29 @@
 #include <cmath>
 #include <iomanip>
 #include <string>
-#include <errno.h>
+#include "util.hpp"
 
 using namespace std;
 using namespace fifolib::generic;
 
 falling Motor_test::callback{};
 
-Motor_test::Motor_test(bool suppress_lost_messages, size_t buffer_size)
-    : reader(nullptr),
-      buffer(),
-      rpm(0),
-      start(),
-      cur(),
-      suppress_lost_messages(suppress_lost_messages),
-      buffer_size(buffer_size),
-      i2c_handle(0) {
+Motor_test::Motor_test() : rpm(0), configured_rpm(0), start(), cur() {
   gpioInitialise();
 
   // Setup motor pins
-  gpioSetMode(DIR, PI_OUTPUT);
-
-  // i2c_handle = i2cOpen(I2C_BUS, ADDR, 0);
-  std::string filename = "/dev/i2c-1";
-  if ((i2c_handle = open(filename.c_str(), O_RDWR)) < 0) {
-    /* ERROR HANDLING: you can check errno to see what went wrong */
-    cout << "Failed to open the i2c bus: " << errno << endl;
-    exit(1);
-  }
-  if (ioctl(i2c_handle, I2C_SLAVE, ADDR) < 0) {
-    cout << "Failed to acquire bus access and/or talk to slave: " << errno << endl;
-    /* ERROR HANDLING; you can check errno to see what went wrong */
-    exit(1);
-  }
+  gpioSetMode(DIR_PIN, PI_OUTPUT);
+  gpioSetMode(PWM_PIN, PI_ALT0);
+  gpioSetPWMrange(PWM_PIN, 15000);
 
   setMotorSpeed(0);
 }
 
-void Motor_test::setup() {
-  reader =
-      open_reader<sizeof(DataSample)>(*callback.setup(this, buffer_size), 1);
+void Motor_test::setup(std::ostream& output) {
+  callback.setup(output, this);
 
   gpioSetISRFunc(
-      GPIO_DAC, FALLING_EDGE, 0,
+      INTERRUPT_PIN, FALLING_EDGE, 0,
       [](int gpio, int level, uint32_t tick) { callback(gpio, level, tick); });
 
   auto tmp = chrono::steady_clock::now();
@@ -79,32 +59,23 @@ chrono::time_point<chrono::steady_clock> Motor_test::getCurTime() const {
   return cur;
 }
 
-bool Motor_test::suppressLostMessages() const {
-  return suppress_lost_messages;
-}
-
-void Motor_test::setMotorSpeed(double rpm) const {
-  ::setMotorSpeed(rpm, i2c_handle);
+std::string Motor_test::test_data() const {
+  return "";
 }
 
 Motor_test::~Motor_test() {
   setMotorSpeed(0);
-  delete reader;
-  close(i2c_handle);
-  gpioSetISRFunc(GPIO_DAC, FALLING_EDGE, 0, NULL);
+  gpioSetISRFunc(INTERRUPT_PIN, FALLING_EDGE, 0, NULL);
   gpioTerminate();
 }
 
 falling::falling()
-    : writer(nullptr), motor_test(nullptr), prev(), cycleIndex(0) {}
+    : output(nullptr), motor_test(nullptr), prev(), cycleIndex(0) {}
 
-const GenericFifoWriter<sizeof(DataSample)>* falling::setup(
-    Motor_test* motor_test,
-    size_t buffer_size) {
-  writer = init_writer<sizeof(DataSample)>(buffer_size);
+void falling::setup(std::ostream& output, Motor_test* motor_test) {
+  this->output = &output;
   this->motor_test = motor_test;
   prev = motor_test->getStartTime();
-  return writer;
 }
 
 void falling::operator()(int gpio, int level, uint32_t tick) {
@@ -112,27 +83,21 @@ void falling::operator()(int gpio, int level, uint32_t tick) {
   if (cycleIndex >= TICKS_FOR_AVERAGE) {
     cycleIndex = 0;
     auto cur = motor_test->getCurTime();
-    std::chrono::duration<double> microSec = cur - prev;
-    std::chrono::duration<double> timeSec = cur - motor_test->getStartTime();
+    chrono::microseconds microSec =
+        chrono::duration_cast<chrono::microseconds>(cur - prev);
+    chrono::duration<double> timeSec = cur - motor_test->getStartTime();
 
     prev = cur;
-    double rpm = TICKS_FOR_AVERAGE * 10.0 / microSec.count();
+    double rpm = TICKS_FOR_AVERAGE * 10.0 / (microSec.count()/1'000'000.0);
     motor_test->setRPM(rpm);
 
-    const DataSample sample = {timeSec.count(), rpm};  // {timeSec, rpm}
-
-    writer->try_write(sample);
-    std::size_t failedWrites = writer->getFailedWrites();
-    if (!motor_test->suppressLostMessages() && failedWrites % 10 == 0 &&
-        failedWrites > 0) {
-      cerr << "Lost: " << failedWrites << " messages" << endl;
-    }
+    const string msg = to_precision(timeSec.count(), 4) + ", " +
+                       to_precision(rpm, 4) + ", " + motor_test->test_data();
+    *output << msg << endl;
   }
 }
 
-falling::~falling() {
-  delete writer;
-}
+falling::~falling() {}
 
 // 1. Speed vs torque
 // 2. Speed control precision
@@ -141,10 +106,10 @@ falling::~falling() {
 // 5. Frequency response
 // 6. Custom
 
-bool Speed_v_torque::loop(std::ostream& output) {
+bool Speed_v_torque::loop() {
   cur = chrono::steady_clock::now();
 
-  double configured_rpm = 0;
+  configured_rpm = 0;
   if (!cycle_started) {
     setMotorSpeed(15000);
     configured_rpm = 15000;
@@ -155,17 +120,14 @@ bool Speed_v_torque::loop(std::ostream& output) {
     cycle_started = false;
     return cycles < 5;
   }
-
-  while (reader->try_read(buffer)) {
-    const string msg = to_precision(buffer.timeSec, 4) + ", " +
-                       to_precision(buffer.rpm, 4) + ", " +
-                       to_precision(configured_rpm, 4);
-    output << msg << endl;
-  }
   return true;
 }
 
-bool Speed_control_precision::loop(std::ostream& output) {
+std::string Speed_v_torque::test_data() const {
+  return to_precision(configured_rpm, 4);
+}
+
+bool Speed_control_precision::loop() {
   cur = chrono::steady_clock::now();
 
   if (!cycle_started) {
@@ -185,39 +147,34 @@ bool Speed_control_precision::loop(std::ostream& output) {
       cycle_started = false;
     }
   }  // else, do nothing. Let test run
-
-  while (reader->try_read(buffer)) {
-    const string msg = to_precision(buffer.timeSec, 4) + ", " +
-                       to_precision(buffer.rpm, 4) + ", " +
-                       to_precision(configured_rpm, 4);
-    output << msg << endl;
-  }
   return true;
 }
 
-bool Max_speed::loop(std::ostream& output) {
+std::string Speed_control_precision::test_data() const {
+  return to_precision(configured_rpm, 4);
+}
+
+bool Max_speed::loop() {
   cur = chrono::steady_clock::now();
   std::chrono::duration<double> t = getCurTime() - getStartTime();
 
   setMotorSpeed(15000);  // You can end this test manually
-  double configured_rpm = 15000;
+  configured_rpm = 15000;
   if (t.count() >= 10.0) {
     return false;
-  }
-
-  while (reader->try_read(buffer)) {
-    const string msg = to_precision(buffer.timeSec, 4) + ", " +
-                       to_precision(buffer.rpm, 4) + ", " +
-                       to_precision(configured_rpm, 4);
-    output << msg << endl;
   }
   return true;
 }
 
-bool Current_draw::loop(std::ostream& output) {
+std::string Max_speed::test_data() const {
+  return to_precision(configured_rpm, 4);
+}
+
+bool Current_draw::loop() {
   cur = chrono::steady_clock::now();
 
-  suppress_lost_messages = true;
+  is_valid = false;
+
   configured_rpm += 500;  // Go in increments of 500 rpm
   if (configured_rpm > 15000) {
     configured_rpm = 0;
@@ -225,28 +182,26 @@ bool Current_draw::loop(std::ostream& output) {
     return false;
   }
   setMotorSpeed(configured_rpm);
-  delay(3000);  // Wait for things to settle
+  delay(1500);  // Wait for things to settle
   cout << "Current draw (in Amps): ";
-  float current;
-  cin >> current;
+  cin >> current_draw;
 
-  std::stringstream ss;
-  ss << std::fixed << std::setprecision(3) << current;
-  std::string current_fixed_decimal = ss.str();
+  is_valid = true;
 
-  reader->clear_buffer();
   delay(1500);
 
-  while (reader->try_read(buffer)) {
-    const string msg =
-        to_precision(buffer.timeSec, 4) + ", " + to_precision(buffer.rpm, 4) +
-        ", " + to_precision(configured_rpm, 4) + ", " + current_fixed_decimal;
-    output << msg << endl;
-  }
   return true;
 }
 
-bool Frequency_response::loop(std::ostream& output) {
+std::string Current_draw::test_data() const {
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(3) << current_draw;
+  std::string current_fixed_decimal = ss.str();
+  return to_precision(configured_rpm, 4) + ", " + current_fixed_decimal + ", " +
+         std::to_string(is_valid);
+}
+
+bool Frequency_response::loop() {
   cur = chrono::steady_clock::now();
   if (freq == 0) {
     freq = FREQUENCY_START;
@@ -270,19 +225,18 @@ bool Frequency_response::loop(std::ostream& output) {
   }
 
   // TODO: Change code so you don't get discontinuous sine
-  double configured_rpm = 7500 + 7500 * std::sin(2 * M_PI * freq * t - M_PI_2);
+  configured_rpm = 7500 + 7500 * std::sin(2 * M_PI * freq * t - M_PI_2);
   setMotorSpeed(configured_rpm);
 
-  while (reader->try_read(buffer)) {
-    const string msg =
-        to_precision(buffer.timeSec, 4) + ", " + to_precision(buffer.rpm, 4) +
-        ", " + to_precision(configured_rpm, 4) + ", " + to_precision(freq, 4);
-    output << msg << endl;
-  }
   return true;
 }
 
-bool Custom_test::loop(std::ostream& output) {
+std::string Frequency_response::test_data() const {
+  return to_precision(configured_rpm, 4) + ", " + 
+         to_precision(freq, 4);
+}
+
+bool Custom_test::loop() {
   delay(10);
   count += 1;
   if (count > 100) {

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <ostream>
 #include <string>
 #include <utility>
 #include "GenericFifo.hpp"
@@ -24,39 +25,32 @@ class Motor_test {
   // requires a pure C function, and an instance method can not be used there
   static falling callback;
 
-  GenericFifoReader<sizeof(DataSample)>* reader;
-  DataSample buffer;
-  std::atomic<double> rpm;
-  std::atomic<time_point<steady_clock>> start;
+  std::atomic<float> rpm;
+  std::atomic<float> configured_rpm;
+  std::atomic<time_point<steady_clock>> start; // Undefined behavior?
   std::atomic<time_point<steady_clock>> cur;
-  std::atomic<bool> suppress_lost_messages;
-  std::size_t buffer_size;
-  std::size_t i2c_handle;
 
-  Motor_test(bool suppress_lost_messages, size_t buffer_size);
+  Motor_test();
 
  public:
-  void setup();
+  void setup(std::ostream& output);
   void setRPM(double rpm);
-  virtual bool loop(std::ostream& output) = 0;
+  virtual bool loop() = 0;
   void stopAndWaitForStop() const;
   time_point<steady_clock> getStartTime() const;
   time_point<steady_clock> getCurTime() const;
-  bool suppressLostMessages() const;
-  void setMotorSpeed(double rpm) const;
+  virtual std::string test_data() const;
   virtual ~Motor_test();
 };
 
 struct falling {
-  fifolib::generic::GenericFifoWriter<sizeof(DataSample)>* writer;
+  std::ostream* output;
   Motor_test* motor_test;
   std::chrono::time_point<std::chrono::steady_clock> prev;
   size_t cycleIndex;
 
   falling();
-  const fifolib::generic::GenericFifoWriter<sizeof(DataSample)>* setup(
-      Motor_test* motor_test,
-      size_t buffer_size);
+  void setup(std::ostream& output, Motor_test* motor_test);
   void operator()(int gpio, int level, uint32_t tick);
   ~falling();
 };
@@ -79,13 +73,13 @@ class Speed_v_torque : public Motor_test {
       : Motor_test(std::forward<decltype(args)>(args)...),
         cycle_started(false),
         cycles(0) {}
-  virtual bool loop(std::ostream& output);
+  virtual bool loop();
+  virtual std::string test_data() const;
 };
 
 class Speed_control_precision : public Motor_test {
  private:
   bool cycle_started;
-  int configured_rpm;
   std::chrono::time_point<std::chrono::steady_clock> t1;
 
  public:
@@ -93,9 +87,9 @@ class Speed_control_precision : public Motor_test {
   Speed_control_precision(Args&&... args)
       : Motor_test(std::forward<decltype(args)>(args)...),
         cycle_started(false),
-        configured_rpm(0),
         t1() {}
-  virtual bool loop(std::ostream& output);
+  virtual bool loop();
+  virtual std::string test_data() const;
 };
 
 class Max_speed : public Motor_test {
@@ -103,30 +97,34 @@ class Max_speed : public Motor_test {
   template <typename... Args>
   Max_speed(Args&&... args)
       : Motor_test(std::forward<decltype(args)>(args)...) {}
-  virtual bool loop(std::ostream& output);
+  virtual bool loop();
+  virtual std::string test_data() const;
 };
 
 class Current_draw : public Motor_test {
  private:
-  int configured_rpm;
+  float current_draw;
+  bool is_valid;
 
  public:
   template <typename... Args>
   Current_draw(Args&&... args)
-      : Motor_test(std::forward<decltype(args)>(args)...), configured_rpm(0) {}
-  virtual bool loop(std::ostream& output);
+      : Motor_test(std::forward<decltype(args)>(args)...), current_draw(0), is_valid(false) {}
+  virtual bool loop();
+  virtual std::string test_data() const;
 };
 
 class Frequency_response : public Motor_test {
  private:
   std::chrono::time_point<std::chrono::steady_clock> t1;
-  double freq;
+  float freq;
 
  public:
   template <typename... Args>
   Frequency_response(Args&&... args)
       : Motor_test(std::forward<decltype(args)>(args)...), t1(), freq(0) {}
-  virtual bool loop(std::ostream& output);
+  virtual bool loop();
+  virtual std::string test_data() const;
 };
 
 class Custom_test : public Motor_test {
@@ -138,5 +136,5 @@ class Custom_test : public Motor_test {
   template <typename... Args>
   Custom_test(Args&&... args)
       : Motor_test(std::forward<decltype(args)>(args)...), count(0), flop(1) {}
-  virtual bool loop(std::ostream& output);
+  virtual bool loop();
 };

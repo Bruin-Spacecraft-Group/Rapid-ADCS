@@ -23,41 +23,23 @@ void delay(int milli) {
   usleep(milli * 1000);
 }
 
-void setVoltage(double VOLTAGE, int i2c_handle) {
-  uint16_t voltageBinary = 0;
-  voltageBinary = (uint16_t)((VOLTAGE / 5.0) * 16383.0);
-  voltageBinary = voltageBinary << 2;
-  sendCommand(CODE_LOAD, voltageBinary, i2c_handle);
-}
-
-// Send command to DAC
-void sendCommand(uint8_t COMMAND, uint16_t DATA, int i2c_handle) {
-  // cout << "DATA: " << (int)DATA << endl;
-  uint8_t data[3];
-  data[0] = COMMAND;
-  data[1] = (DATA >> 8) & 0xff;
-  data[2] = (DATA << 0) & 0xff;
-  if (write(i2c_handle, data, 3) != 3) {
-    cerr << "Failed to write to the i2c bus." << endl;
-    cerr << "Error: " << errno << endl;
-  }
-}
-
-void setMotorSpeed(double rpm, int i2c_handle, bool forward) {
+void setMotorSpeed(double rpm, bool forward) {
   if (!forward) {
-    gpioWrite(DIR, PI_LOW);
+    gpioWrite(DIR_PIN, PI_LOW);
   } else {
-    gpioWrite(DIR, PI_HIGH);
+    gpioWrite(DIR_PIN, PI_HIGH);
   }
-  double voltageSet = (rpm / 15000.0) * 5.0;
-  setVoltage(voltageSet, i2c_handle);
+  // double voltageSet = (rpm / 15000.0) * 5.0;
+  // setVoltage(voltageSet, i2c_handle);
+  const int dutycycle = rpm*(15000.0/PWM_RANGE);
+  gpioPWM(PWM_PIN, dutycycle);
 }
 
-void setMotorSpeed(double rpm, int i2c_handle) {
+void setMotorSpeed(double rpm) {
   if (rpm >= 0) {
-    setMotorSpeed(rpm, i2c_handle, true);
+    setMotorSpeed(rpm, true);
   } else {
-    setMotorSpeed(-rpm, i2c_handle, false);
+    setMotorSpeed(-rpm, false);
   }
 }
 
