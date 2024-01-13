@@ -1,3 +1,10 @@
 Simulink/OrientationModeling/slprj
 *.slxc
 *.autosave
+acado_ocp*
+c_generated_code/
+Optimal Control/.ipynb_checkpoints/
+Optimal Control/acados_ocp.json
+Optimal Control/acados_ocp_nlp.json
+Simulink/OrientationModeling/Controller.slx.original
+Simulink/OrientationModeling/OrientationAnimationModel_old_and_bad.slx
